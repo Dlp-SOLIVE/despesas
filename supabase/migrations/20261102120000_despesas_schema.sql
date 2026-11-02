@@ -240,7 +240,8 @@ create trigger exp_profiles_touch before update on public.exp_profiles for each 
 create or replace function exp_private.guard_profile()
 returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if not exp_private.is_admin() then
+  -- auth.uid() nulo = SQL Editor / servidor (sem sessão de utilizador): permitido
+  if auth.uid() is not null and not exp_private.is_admin() then
     if tg_op = 'UPDATE' and (new.role <> old.role or new.active <> old.active or new.manager_id is distinct from old.manager_id) then
       raise exception 'Só o administrador altera perfil, manager ou estado';
     end if;
