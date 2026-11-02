@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Claim, Currency, Details, ExpType, Line, Participant } from "../types";
-import { receiptURL, runOcr, saveLine, uploadReceipt, type LineInput } from "../lib/data";
+import { downloadReceipt, receiptURL, saveLine, uploadReceipt, type LineInput } from "../lib/data";
+import { readReceiptLocally } from "../lib/localOcr";
 import { eur } from "../lib/format";
 import { TYPES, TYPE_KEYS, detailSchema, detailText, lineIssues, suggestSub } from "../lib/rules";
 import { Field, Modal, Seg, useApp } from "../ui";
@@ -21,6 +22,8 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   const [busy, setBusy] = useState<"" | "up" | "ocr" | "save">("");
   const [url, setUrl] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const blobRef = useRef<Blob | null>(null);
+  const [progress, setProgress] = useState("");
 
   useEffect(() => {
     if (f.file_path && f.file_type !== "application/pdf") receiptURL(f.file_path).then(setUrl).catch(() => setUrl(null));
@@ -37,8 +40,10 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
     setBusy("up");
     try {
       const up = await uploadReceipt(file, app.me.id, claim.id);
+      blobRef.current = file;
       setF((p) => ({ ...p, file_path: up.path, file_type: up.type }));
       setOcr({});
+      void read(file, up.type);
     } catch (e) {
       app.fail(e);
     } finally {
@@ -46,19 +51,34 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
     }
   }
 
-  async function read() {
-    if (!f.file_path) return;
+  async function read(fileArg?: Blob, typeArg?: string) {
+    const path = f.file_path;
+    if (!fileArg && !path) return;
     setBusy("ocr");
+    setProgress("A preparar…");
     try {
-      const r = await runOcr(f.file_path);
-      const flags: OcrFlags = {};
+      const blob = fileArg ?? blobRef.current ?? (path ? await downloadReceipt(path) : null);
+      if (!blob) return;
+      blobRef.current = blob;
+      const r = await readReceiptLocally(blob, typeArg ?? f.file_type ?? blob.type, setProgress);
+      if (r.source === "nenhum") {
+        app.toast("Não foi possível ler este recibo. Preencha os campos à mão.", "err");
+        return;
+      }
+      const flags: OcrFlags = {
+        date: !!(r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)),
+        client: !!r.client,
+        nif: !!r.nif_buyer,
+        incl: typeof r.total_incl === "number",
+        excl: typeof r.total_excl === "number",
+      };
       setF((p) => {
         const n: LineInput = { ...p, details: { ...p.details }, ocr: r as Record<string, unknown> };
-        if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) { n.receipt_date = r.date; flags.date = true; }
-        if (r.client) { n.client = r.client; flags.client = true; }
-        if (r.nif_buyer) { n.nif = r.nif_buyer; flags.nif = true; }
-        if (typeof r.total_incl === "number") { n.incl = r.total_incl; flags.incl = true; }
-        if (typeof r.total_excl === "number") { n.excl = r.total_excl; flags.excl = true; }
+        if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) n.receipt_date = r.date;
+        if (r.client && (!p.client || !p.client.trim())) n.client = r.client;
+        if (r.nif_buyer) n.nif = r.nif_buyer;
+        if (typeof r.total_incl === "number") n.incl = r.total_incl;
+        if (typeof r.total_excl === "number") n.excl = r.total_excl;
         if (r.currency === "GBP" || r.currency === "EUR") n.currency = r.currency as Currency;
         const t = r.suggested_type as ExpType | null | undefined;
         if (!p.type && t && TYPE_KEYS.includes(t)) n.type = t;
@@ -71,12 +91,14 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
         return n;
       });
       if (r.vat_breakdown === false) setNoVat(true);
+      else if (r.vat_breakdown === true) setNoVat(false);
       setOcr(flags);
-      app.toast("Recibo lido. Confirme os valores antes de guardar.");
+      app.toast(r.source === "qr" ? "Dados lidos do código QR da fatura. Confirme a entidade e complete os Details." : "Texto lido (sem código QR). Confirme data, valores e IVA.");
     } catch (e) {
       app.fail(e);
     } finally {
       setBusy("");
+      setProgress("");
     }
   }
 
@@ -119,8 +141,8 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
             <input ref={fileRef} type="file" accept="image/*,application/pdf" capture="environment" hidden onChange={(e) => void pick(e.target.files?.[0])} />
           </div>
           <div className="ocr-bar">
-            <button className="btn dark" disabled={!f.file_path || !!busy} onClick={() => void read()}>{busy === "ocr" ? "A ler recibo…" : "Ler recibo automaticamente"}</button>
-            <span className="muted">Pré-preenche data, NIF, entidade e valores. Todos os campos podem ser preenchidos ou corrigidos à mão.</span>
+            <button className="btn dark" disabled={!f.file_path || !!busy} onClick={() => void read()}>{busy === "ocr" ? progress || "A ler recibo…" : "Ler recibo novamente"}</button>
+            <span className="muted">Lido automaticamente ao carregar: código QR das faturas portuguesas (dados exatos) ou texto do recibo. Tudo no seu computador; nada é enviado para serviços externos. Todos os campos podem ser corrigidos à mão.</span>
           </div>
           <div className="issues">{issues.length ? issues.map((i, k) => <div key={k} className={i.lv}>{i.msg}</div>) : <div className="ok">Sem alertas</div>}</div>
         </div>

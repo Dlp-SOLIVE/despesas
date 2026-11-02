@@ -19,7 +19,13 @@ O estado só muda pelas funções `exp_submit`, `exp_decide`, `exp_admin_reopen`
 Supabase → **SQL Editor** → New query → colar todo o ficheiro `supabase/migrations/20261102120000_despesas_schema.sql` → **Run**.
 Pode voltar a correr o script sem problema (não duplica nada). Não altera nenhuma tabela das Compras.
 
-### 2. Leitura automática (Claude)
+### 2. Leitura automática dos recibos
+Gratuita e sem configuração: corre no browser do colaborador (nada é enviado para serviços externos).
+1. **Código QR fiscal** das faturas portuguesas (Portaria 195/2020): data, NIF emitente e adquirente, total, IVA, ATCUD — dados exatos.
+2. **Texto**: PDF digital (pdf.js) ou fotografia (Tesseract, português) — nome da entidade, categoria sugerida e, sem QR, data e total.
+Todos os campos continuam editáveis. Recibos estrangeiros e talões sem QR leem-se pior: confirmar sempre.
+
+**Opcional, mais tarde (Claude):** a Edge Function `supabase/functions/exp-ocr` fica pronta para quando houver chave `ANTHROPIC_API_KEY`; não é usada nesta versão.
 1. console.anthropic.com → API Keys → **Create Key** (conta da empresa).
 2. Supabase → **Edge Functions** → Secrets → `ANTHROPIC_API_KEY` = a chave.
 3. Publicar a função `supabase/functions/exp-ocr`:
