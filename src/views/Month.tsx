@@ -52,7 +52,7 @@ export function MonthView() {
       <ClaimHeader claim={claim} eyebrow="Pedido de reembolso" actions={ed ? (
         <>
           {claim.period === period && <button className="btn" onClick={() => setNc(true)}>Outro cost center</button>}
-          <button className="btn" onClick={() => app.go("km", claim.id)}>Quilómetros</button>
+          {(app.me.uses_km || claim.trips.length > 0) && <button className="btn" onClick={() => app.go("km", claim.id)}>Quilómetros</button>}
           <button className="btn primary" disabled={claim.lines.length >= s.max_lines} onClick={() => setEdit("new")}>Adicionar recibo</button>
         </>
       ) : undefined} />

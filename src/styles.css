@@ -26,6 +26,9 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:500;margin:0}
 .login-form label{display:grid;gap:4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--black-70)}
 .login-form input,.login-form select{border:1px solid var(--black-30);padding:10px;font-size:15px;text-transform:none;letter-spacing:0;color:#000;border-radius:0;background:#fff}
 .login-form input:focus,.login-form select:focus{outline:none;border-color:#000;box-shadow:inset 0 -2px 0 var(--red)}
+.km-check{display:flex !important;gap:10px;align-items:flex-start;text-transform:none !important;letter-spacing:0 !important;font-size:14px !important;color:#000 !important;cursor:pointer}
+.km-check input{margin-top:3px;accent-color:var(--red)}
+.km-check small{display:block;color:var(--black-70);font-size:12px;margin-top:2px}
 .link-button{background:none;border:0;padding:0;color:#000;text-decoration:underline;text-underline-offset:2px;cursor:pointer;font-size:13px;justify-self:start}
 .link-button:hover{color:var(--red)}.link-button.danger{color:var(--danger)}.link-button:disabled{color:var(--black-50);cursor:default}
 
@@ -38,7 +41,8 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:500;margin:0}
 .appbar nav button{background:none;border:0;border-bottom:4px solid transparent;padding:4px 12px 0;font-size:12px;letter-spacing:.06em;text-transform:uppercase;font-weight:500;color:var(--black-70);cursor:pointer;display:flex;align-items:center;gap:6px;min-height:56px}
 .appbar nav button:hover{color:#000}.appbar nav button.on{color:#000;border-bottom-color:var(--red)}
 .badge{background:var(--red);color:#fff;font-size:10px;padding:1px 6px}
-.me{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:13px}
+.me{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:13px;padding:8px 0}
+@media(max-width:1180px){.appbar nav button{padding:4px 8px 0;letter-spacing:.03em}}
 .me-n{text-align:right;line-height:1.2}.me-n small{display:block;color:var(--black-70);font-size:11px}
 .av{width:32px;height:32px;background:#000;color:#fff;display:grid;place-items:center;font-size:12px;font-weight:500}
 .app-body{padding:28px clamp(16px,3vw,32px) 48px}

@@ -88,7 +88,7 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
   const nav: [View, string][] = [
     ...(approver ? [["aprov", me.role === "contabilidade" ? "A lançar" : "Aprovações"] as [View, string]] : []),
     ["mes", "O meu mês"],
-    ["km", "Quilómetros"],
+    ...(me.uses_km ? [["km", "Quilómetros"] as [View, string]] : []),
     ["hist", "Histórico"],
     ["perfil", "Perfil"],
     ...(me.role === "admin" ? [["admin", "Administração"] as [View, string]] : []),

@@ -81,8 +81,8 @@ export function ProfileView() {
         </div>
         <div>
           <div className="k">Viatura pessoal</div>
-          <p>{app.vehicle?.model || "—"}<br />{app.vehicle?.plate ?? ""}</p>
-          <button className="btn" onClick={() => app.go("km")}>Editar em Quilómetros</button>
+          <label className="cb"><input type="checkbox" disabled={busy} checked={me.uses_km} onChange={(e) => void patch({ uses_km: e.target.checked }, e.target.checked ? "Mapa de quilómetros ativado." : "Mapa de quilómetros desativado.")} /> Uso a minha viatura pessoal em serviço</label>
+          {me.uses_km && <><p>{app.vehicle?.model || "—"}<br />{app.vehicle?.plate ?? ""}</p><button className="btn" onClick={() => app.go("km")}>Editar em Quilómetros</button></>}
         </div>
       </div>
     </div>

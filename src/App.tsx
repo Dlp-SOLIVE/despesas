@@ -12,6 +12,12 @@ const COMPANIES = [
   { id: "IBER", name: "Legendre Ibérica" },
 ];
 
+function KmCheck({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="km-check"><input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} /><span>Uso a minha viatura pessoal em serviço e preencho o mapa de quilómetros<small>Pode alterar depois no Perfil.</small></span></label>
+  );
+}
+
 function Brand() {
   return <div className="brand-lockup"><img src={logo} alt="LEGENDRE" /><span>Despesas</span></div>;
 }
@@ -63,7 +69,7 @@ function Gate({ session }: { session: Session }) {
 function RequestAccess({ email, onDone, onSignOut }: { email: string; onDone: () => void; onSignOut: () => void }) {
   const saved = (() => {
     try {
-      return JSON.parse(window.localStorage.getItem(PENDING_KEY) ?? "{}") as { name?: string; mat?: string; company?: string };
+      return JSON.parse(window.localStorage.getItem(PENDING_KEY) ?? "{}") as { name?: string; mat?: string; company?: string; km?: boolean };
     } catch {
       return {};
     }
@@ -71,6 +77,7 @@ function RequestAccess({ email, onDone, onSignOut }: { email: string; onDone: ()
   const [name, setName] = useState(saved.name ?? "");
   const [mat, setMat] = useState(saved.mat ?? "");
   const [company, setCompany] = useState(saved.company ?? "LEGDR");
+  const [km, setKm] = useState(saved.km ?? false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   async function submit(e: FormEvent) {
@@ -78,7 +85,7 @@ function RequestAccess({ email, onDone, onSignOut }: { email: string; onDone: ()
     setBusy(true);
     setMsg(null);
     try {
-      await requestAccess(name, mat, company);
+      await requestAccess(name, mat, company, km);
       window.localStorage.removeItem(PENDING_KEY);
       onDone();
     } catch (err) {
@@ -95,6 +102,7 @@ function RequestAccess({ email, onDone, onSignOut }: { email: string; onDone: ()
         <label>Nome completo<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label>Matrícula<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
         <label>Empresa<select value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <KmCheck value={km} onChange={setKm} />
         <button className="btn primary" disabled={busy || !name || !mat} type="submit">Pedir acesso</button>
       </form>
       <button className="link-button" onClick={onSignOut}>Terminar sessão</button>
@@ -111,6 +119,7 @@ function Login() {
   const [name, setName] = useState("");
   const [mat, setMat] = useState("");
   const [company, setCompany] = useState("LEGDR");
+  const [km, setKm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -130,7 +139,7 @@ function Login() {
     if (pw !== pw2) return setMsg("As palavras-passe não coincidem.");
     setBusy(true);
     setMsg(null);
-    window.localStorage.setItem(PENDING_KEY, JSON.stringify({ name, mat, company }));
+    window.localStorage.setItem(PENDING_KEY, JSON.stringify({ name, mat, company, km }));
     const { data, error } = await supabase.auth.signUp({ email, password: pw, options: { data: { full_name: name } } });
     if (error) {
       setBusy(false);
@@ -138,7 +147,7 @@ function Login() {
     }
     if (data.session) {
       try {
-        await requestAccess(name, mat, company);
+        await requestAccess(name, mat, company, km);
         window.localStorage.removeItem(PENDING_KEY);
       } catch {
         // volta a pedir no ecrã seguinte
@@ -175,6 +184,7 @@ function Login() {
           <label>Nome completo<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
           <label>Matrícula<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
           <label>Empresa<select value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <KmCheck value={km} onChange={setKm} />
           <label>Palavra-passe<input type="password" required minLength={6} value={pw} onChange={(e) => setPw(e.target.value)} /></label>
           <label>Confirmar palavra-passe<input type="password" required minLength={6} value={pw2} onChange={(e) => setPw2(e.target.value)} /></label>
           <button className="btn primary" disabled={busy} type="submit">Pedir acesso</button>

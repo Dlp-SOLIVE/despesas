@@ -17,8 +17,8 @@ export async function loadMe(email: string): Promise<Person | null> {
   return (res.data as Person | null) ?? null;
 }
 
-export async function requestAccess(fullName: string, matricula: string, company: string) {
-  check(await sb().rpc("exp_request_access", { p_full_name: fullName, p_matricula: matricula, p_company: company }));
+export async function requestAccess(fullName: string, matricula: string, company: string, usesKm: boolean) {
+  check(await sb().rpc("exp_request_access", { p_full_name: fullName, p_matricula: matricula, p_company: company, p_uses_km: usesKm }));
 }
 
 export async function loadRefs(): Promise<Refs> {
@@ -197,7 +197,7 @@ export async function upsertCostCenter(cc: CostCenter, isNew: boolean) {
   if (isNew) check(await sb().from("exp_cost_centers").insert(cc));
   else check(await sb().from("exp_cost_centers").update({ label: cc.label, company_id: cc.company_id, owner_id: cc.owner_id, active: cc.active }).eq("code", cc.code));
 }
-export async function updateProfile(staffId: string, patch: Partial<Pick<Person, "role" | "manager_id" | "company_id" | "matricula" | "active" | "docusign">>) {
+export async function updateProfile(staffId: string, patch: Partial<Pick<Person, "role" | "manager_id" | "company_id" | "matricula" | "active" | "docusign" | "uses_km">>) {
   check(await sb().from("exp_profiles").update(patch).eq("staff_member_id", staffId));
 }
 export async function updateSettings(patch: Partial<Settings>) {

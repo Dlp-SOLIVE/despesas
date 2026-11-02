@@ -49,7 +49,7 @@ function Users() {
     <>
       <div className="tbl-wrap">
         <table>
-          <thead><tr><th>Nome</th><th>Matrícula</th><th>Empresa</th><th>Perfil</th><th>Manager</th><th>Estado</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Matrícula</th><th>Empresa</th><th>Perfil</th><th>Manager</th><th>Km</th><th>Estado</th></tr></thead>
           <tbody>
             {people.map((p) => (
               <tr key={p.id} className={p.active ? "" : "flag"}>
@@ -58,6 +58,7 @@ function Users() {
                 <td><select className="in bare" value={p.company_id ?? ""} onChange={(e) => upd(p, { company_id: e.target.value || null })}><option value="">—</option>{app.refs.companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></td>
                 <td><select className="in bare" value={p.role} disabled={p.id === app.me.id} onChange={(e) => upd(p, { role: e.target.value as ExpRole })}>{Object.entries(ROLES).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></td>
                 <td><select className="in bare" value={p.manager_id ?? ""} onChange={(e) => upd(p, { manager_id: e.target.value || null })}><option value="">—</option>{approvers.filter((x) => x.id !== p.id).map((x) => <option key={x.id} value={x.id}>{x.full_name}</option>)}</select></td>
+                <td><input type="checkbox" aria-label="Usa viatura pessoal" checked={p.uses_km} onChange={(e) => upd(p, { uses_km: e.target.checked })} /></td>
                 <td>{p.active ? <button className="link-button" disabled={p.id === app.me.id} onClick={() => upd(p, { active: false })}><Chip tone="ok">Ativo</Chip></button> : <button className="btn primary sm" onClick={() => upd(p, { active: true })}>Aprovar acesso</button>}</td>
               </tr>
             ))}

@@ -13,6 +13,7 @@ export type Person = {
   matricula: string | null;
   active: boolean;
   docusign: boolean;
+  uses_km: boolean;
   created_at?: string;
 };
 

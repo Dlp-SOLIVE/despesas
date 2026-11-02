@@ -4,7 +4,7 @@ Plataforma de pedidos de reembolso de despesas e mapa de quilómetros da Legendr
 Gera o **Excel oficial** ("To be printed", "Expense Claim Form", "Détail IK") e o **PDF único** com os recibos numerados, tal como a contabilidade exige.
 
 - Repositório: `Dlp-SOLIVE/despesas` (ramo `main` → deploy automático no Netlify)
-- Supabase: **o mesmo do Sistema de Compras** (`rfdsxigfodzayoxebbga`). Tabelas com prefixo `exp_`; o login e a tabela `staff_members` são partilhados.
+- Supabase: projeto `rfdsxigfodzayoxebbga`. Tabelas com prefixo `exp_`. Se for o mesmo projeto do Sistema de Compras, o login e a tabela `staff_members` são partilhados; se for um projeto novo, o script cria a `staff_members` com a mesma estrutura.
 
 ## Tecnologia
 Vite + React + TypeScript (`tsc -b && vite build`), Supabase (Auth, Postgres com RLS, Storage, Edge Function), ExcelJS e pdf-lib (carregados só ao exportar).
@@ -17,7 +17,7 @@ O estado só muda pelas funções `exp_submit`, `exp_decide`, `exp_admin_reopen`
 
 ### 1. Base de dados
 Supabase → **SQL Editor** → New query → colar todo o ficheiro `supabase/migrations/20261102120000_despesas_schema.sql` → **Run**.
-Confirme que é o projeto `rfdsxigfodzayoxebbga` (o das Compras). O script não altera nenhuma tabela das Compras.
+Pode voltar a correr o script sem problema (não duplica nada). Não altera nenhuma tabela das Compras.
 
 ### 2. Leitura automática (Claude)
 1. console.anthropic.com → API Keys → **Create Key** (conta da empresa).
