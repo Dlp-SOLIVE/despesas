@@ -1,0 +1,17 @@
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+
+export const hasSupabaseConfig = Boolean(supabaseUrl && supabaseAnonKey);
+
+export const supabase = hasSupabaseConfig
+  ? createClient(supabaseUrl!, supabaseAnonKey!, {
+      auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: true },
+    })
+  : null;
+
+export function sb() {
+  if (!supabase) throw new Error("Supabase não configurado (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).");
+  return supabase;
+}
