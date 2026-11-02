@@ -128,6 +128,9 @@ function Params() {
       {app.refs.companies.map((c) => (
         <Field key={c.id} label={`NIF · ${c.name}`}><input className="in" defaultValue={c.nif} onBlur={(e) => e.target.value.trim() !== c.nif && void run(() => updateCompany(c.id, e.target.value.trim()), `Alterou NIF ${c.id}`, "NIF guardado.")} /></Field>
       ))}
+      <Field label="DocuSign" hint={s.docusign_enabled ? "Ligado: os aprovadores com DocuSign ativo no Perfil assinam na DocuSign." : "Desligado: as aprovações ficam só registadas na plataforma."}>
+        <label className="cb"><input type="checkbox" checked={s.docusign_enabled} onChange={(e) => { const v = e.target.checked; void run(() => updateSettings({ docusign_enabled: v }), `${v ? "Ligou" : "Desligou"} DocuSign`, v ? "DocuSign ligado." : "DocuSign desligado."); }} /> Assinatura DocuSign nas aprovações (manager e RH)</label>
+      </Field>
       <Field label="Conservação de documentos" hint="Legislação fiscal portuguesa. Só o administrador reabre ou apaga pedidos, sempre com motivo no audit log."><div className="in ro">{s.retention_years} anos</div></Field>
       <div className="params-wide">
         <div className="eyebrow" style={{ marginBottom: 8 }}>Quadro de referência (Listes)</div>

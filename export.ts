@@ -2,7 +2,8 @@
 import type { Claim, Company, CostCenter, Person } from "../types";
 import { downloadReceipt } from "./data";
 import { MONTHS_EN, fmtDate, parseISO } from "./format";
-import { TYPES, detailText, lineRate, tripKm } from "./rules";
+import { TYPES, claimTotals, detailText, lineRate, tripKm } from "./rules";
+import type { Settings } from "../types";
 
 export function download(blob: Blob, name: string) {
   const a = document.createElement("a");
@@ -148,4 +149,64 @@ export async function buildPDF(claim: Claim): Promise<Blob> {
   }
   const out = await doc.save();
   return new Blob([out as unknown as BlobPart], { type: "application/pdf" });
+}
+
+// Documento enviado à DocuSign: folha de aprovação (com âncoras de assinatura) + recibos
+export async function buildSigningPDF(
+  claim: Claim,
+  ctx: { people: Person[]; costCenters: CostCenter[]; companies: Company[]; settings: Settings },
+  signer: Person,
+  stepLabel: string,
+): Promise<string> {
+  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+  const doc = await PDFDocument.create();
+  const reg = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const page = doc.addPage([595.28, 841.89]);
+  const red = rgb(0.902, 0.137, 0.212);
+  const grey = rgb(0.43, 0.43, 0.43);
+  const owner = ctx.people.find((p) => p.id === claim.staff_member_id);
+  const cc = ctx.costCenters.find((x) => x.code === claim.cost_center);
+  const co = ctx.companies.find((x) => x.id === cc?.company_id);
+  const t = claimTotals(claim, ctx.settings);
+  const money = (v: number) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v) + " EUR";
+  let y = 790;
+  page.drawRectangle({ x: 40, y: y + 10, width: 40, height: 4, color: red });
+  page.drawText("LEGENDRE · DESPESAS", { x: 40, y: y - 10, size: 10, font: bold, color: red });
+  y -= 44;
+  page.drawText(`Pedido de reembolso · ${MONTHS_EN[Number(claim.period.slice(5, 7)) - 1]} ${claim.period.slice(0, 4)}`, { x: 40, y, size: 18, font: bold });
+  y -= 30;
+  const row = (k: string, v: string) => {
+    page.drawText(k, { x: 40, y, size: 10, font: reg, color: grey });
+    page.drawText(v, { x: 200, y, size: 10, font: bold });
+    y -= 18;
+  };
+  row("Colaborador", `${owner?.full_name ?? ""} ${owner?.matricula ? "· " + owner.matricula : ""}`);
+  row("Empresa", co?.name ?? "");
+  row("Cost center", `${claim.cost_center} · ${cc?.label ?? ""}`);
+  row("Recibos / trajetos", `${claim.lines.length} / ${claim.trips.length}`);
+  y -= 10;
+  row("1 · Travel E (FDD)", money(t.FDD));
+  row("2 · Representation E-M (FDM)", money(t.FDM));
+  row("3 · Quilómetros", `${money(t.kmEUR)}  (${t.km.toFixed(1)} km)`);
+  row("4 · Office E", money(t.OFF));
+  page.drawLine({ start: { x: 40, y: y + 8 }, end: { x: 555, y: y + 8 }, thickness: 1 });
+  y -= 6;
+  row("Total geral", money(t.total));
+  y -= 30;
+  page.drawText(stepLabel.toUpperCase(), { x: 40, y, size: 10, font: bold, color: red });
+  y -= 20;
+  page.drawText(`Declaro que revi este pedido e os recibos anexos (páginas seguintes) e que os aprovo.`, { x: 40, y, size: 10, font: reg });
+  y -= 50;
+  page.drawText(signer.full_name, { x: 40, y: y + 34, size: 10, font: bold });
+  page.drawLine({ start: { x: 40, y }, end: { x: 300, y }, thickness: 0.8, color: grey });
+  page.drawText("/assinatura/", { x: 44, y: y + 4, size: 6, font: reg, color: rgb(1, 1, 1) });
+  page.drawText("Assinatura", { x: 40, y: y - 12, size: 8, font: reg, color: grey });
+  page.drawLine({ start: { x: 340, y }, end: { x: 555, y }, thickness: 0.8, color: grey });
+  page.drawText("/data/", { x: 344, y: y + 4, size: 6, font: reg, color: rgb(1, 1, 1) });
+  page.drawText("Data", { x: 340, y: y - 12, size: 8, font: reg, color: grey });
+  const receipts = await PDFDocument.load(new Uint8Array(await (await buildPDF(claim)).arrayBuffer()));
+  const pages = await doc.copyPages(receipts, receipts.getPageIndices());
+  pages.forEach((pg) => doc.addPage(pg));
+  return doc.saveAsBase64();
 }

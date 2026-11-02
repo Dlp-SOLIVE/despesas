@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Claim, FavTrip, Person, Refs, Vehicle } from "./types";
-import { audit, loadClaims, loadFavs, loadRefs, loadVehicle } from "./lib/data";
+import { audit, docusignFinish, loadClaims, loadFavs, loadRefs, loadVehicle } from "./lib/data";
 import { isoToday, initials } from "./lib/format";
 import { ROLES } from "./lib/rules";
 import { AppContext, DialogHost, type AppCtx, type View } from "./ui";
@@ -62,6 +62,30 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Regresso da DocuSign: ?ds=1&event=signing_complete
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (!q.get("ds")) return;
+    const event = q.get("event");
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+    const raw = window.sessionStorage.getItem("despesas_ds");
+    window.sessionStorage.removeItem("despesas_ds");
+    if (!raw) return;
+    const pend = JSON.parse(raw) as { claim: string; envelope: string; comment: string };
+    if (event !== "signing_complete") {
+      toast(event === "decline" ? "Assinatura recusada na DocuSign. O pedido não foi aprovado." : "Assinatura não concluída. O pedido continua por aprovar.", "err");
+      return;
+    }
+    toast("A confirmar a assinatura DocuSign…");
+    docusignFinish(pend.claim, pend.envelope, pend.comment)
+      .then(async () => {
+        await reload();
+        toast("Assinado na DocuSign e aprovado.");
+        setUi({ view: "aprov", selId: null });
+      })
+      .catch((e: unknown) => toast(e instanceof Error ? e.message : String(e), "err"));
+  }, []);
 
   const toast = useCallback((text: string, kind: "ok" | "err" = "ok") => {
     const id = Date.now() + Math.random();

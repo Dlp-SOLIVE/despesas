@@ -33,6 +33,17 @@ Todos os campos continuam editáveis. Recibos estrangeiros e talões sem QR leem
    - ou com a CLI: `supabase functions deploy exp-ocr --project-ref rfdsxigfodzayoxebbga`.
 Sem chave, a plataforma funciona na mesma: os recibos são preenchidos à mão.
 
+### 2b. DocuSign (opcional, pode ser desligado)
+Assinatura real das aprovações do manager e dos RH. Envio por um utilizador de serviço da conta DocuSign da empresa; cada aprovador assina com o seu nome e email, sem sair da plataforma.
+1. SQL: correr `supabase/migrations/20261103100000_docusign.sql`.
+2. DocuSign (administrador da conta): **Settings → Apps and Keys → Add App and Integration Key**. Em *Authentication*, **Generate RSA** e guardar a chave privada. Em *Redirect URIs*, acrescentar `https://www.docusign.com`.
+3. Copiar da mesma página: *Integration Key*, *API Username* (User ID) e *API Account ID*.
+4. Supabase → Edge Functions → Secrets: `DOCUSIGN_INTEGRATION_KEY`, `DOCUSIGN_USER_ID`, `DOCUSIGN_ACCOUNT_ID`, `DOCUSIGN_PRIVATE_KEY` (texto completo da chave) e `DOCUSIGN_ENV` (`demo` para testar, `prod` para a conta real).
+5. Publicar a função `supabase/functions/exp-docusign` (Deploy a new function → nome `exp-docusign`).
+6. Na primeira utilização a plataforma mostra um link de autorização (consentimento): o utilizador de serviço abre-o uma vez e aceita.
+7. Na plataforma: Administração → Parâmetros → **DocuSign** ligado; cada aprovador ativa DocuSign no Perfil.
+Nota: aplicações novas começam no ambiente *demo* da DocuSign; para usar a conta real é preciso pedir o *Go-Live* da Integration Key (feito pela DocuSign depois de alguns envios de teste).
+
 ### 3. GitHub
 Carregar todos os ficheiros desta pasta para `Dlp-SOLIVE/despesas` (Add file → Upload files → arrastar o conteúdo da pasta → Commit).
 

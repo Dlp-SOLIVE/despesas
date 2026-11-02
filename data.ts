@@ -9,7 +9,7 @@ function check<T>(res: { data: T | null; error: { message: string } | null }): T
   return res.data as T;
 }
 
-const DEFAULT_SETTINGS: Settings = { km_rate: 0.4, max_age_months: 3, open_day: 20, max_lines: 24, retention_years: 10 };
+const DEFAULT_SETTINGS: Settings = { km_rate: 0.4, max_age_months: 3, open_day: 20, max_lines: 24, retention_years: 10, docusign_enabled: false };
 
 export async function loadMe(email: string): Promise<Person | null> {
   const res = await sb().from("exp_people").select("*").ilike("email", email).maybeSingle();
@@ -33,19 +33,19 @@ export async function loadRefs(): Promise<Refs> {
     companies: (check(co) as Company[]) ?? [],
     costCenters: (check(cc) as CostCenter[]) ?? [],
     settings: s
-      ? { km_rate: Number(s.km_rate), max_age_months: Number(s.max_age_months), open_day: Number(s.open_day), max_lines: Number(s.max_lines), retention_years: Number(s.retention_years) }
+      ? { km_rate: Number(s.km_rate), max_age_months: Number(s.max_age_months), open_day: Number(s.open_day), max_lines: Number(s.max_lines), retention_years: Number(s.retention_years), docusign_enabled: !!s.docusign_enabled }
       : DEFAULT_SETTINGS,
     people: (check(pp) as Person[]) ?? [],
   };
 }
 
-type ClaimRow = Omit<Claim, "lines" | "trips" | "history"> & { lines: Line[] | null; trips: Trip[] | null; history: Claim["history"] | null };
+type ClaimRow = Omit<Claim, "lines" | "trips" | "history" | "signatures"> & { lines: Line[] | null; trips: Trip[] | null; history: Claim["history"] | null; signatures: Claim["signatures"] | null };
 
 export async function loadClaims(): Promise<Claim[]> {
   const rows = check(
     await sb()
       .from("exp_claims")
-      .select("*, lines:exp_lines(*), trips:exp_trips(*), history:exp_history(*)")
+      .select("*, lines:exp_lines(*), trips:exp_trips(*), history:exp_history(*), signatures:exp_signatures(*)")
       .order("period", { ascending: false }),
   ) as ClaimRow[];
   return (rows ?? []).map((r) => ({
@@ -53,6 +53,7 @@ export async function loadClaims(): Promise<Claim[]> {
     lines: (r.lines ?? []).map((l) => ({ ...l, details: l.details ?? {}, excl: l.excl === null ? null : Number(l.excl), incl: l.incl === null ? null : Number(l.incl), rate: Number(l.rate) })).sort((a, b) => a.no - b.no),
     trips: (r.trips ?? []).map((t) => ({ ...t, km: Number(t.km) })),
     history: (r.history ?? []).sort((a, b) => a.at.localeCompare(b.at)),
+    signatures: r.signatures ?? [],
   }));
 }
 
@@ -146,6 +147,21 @@ export async function runOcr(path: string): Promise<OcrResult> {
   const body = res.data as { ok: boolean; data?: OcrResult; error?: string };
   if (!body.ok || !body.data) throw new Error(body.error ?? "Não foi possível ler o recibo");
   return body.data;
+}
+
+async function invokeDocusign(body: Record<string, unknown>) {
+  const res = await sb().functions.invoke("exp-docusign", { body });
+  if (res.error) throw new Error(res.error.message);
+  const out = res.data as { ok: boolean; error?: string; url?: string; envelope_id?: string };
+  if (!out.ok) throw new Error(out.error ?? "Erro DocuSign");
+  return out;
+}
+export async function docusignStart(claimId: string, pdfBase64: string, returnUrl: string): Promise<{ url: string; envelopeId: string }> {
+  const out = await invokeDocusign({ action: "start", claim_id: claimId, pdf_base64: pdfBase64, return_url: returnUrl });
+  return { url: out.url ?? "", envelopeId: out.envelope_id ?? "" };
+}
+export async function docusignFinish(claimId: string, envelopeId: string, comment: string) {
+  await invokeDocusign({ action: "finish", claim_id: claimId, envelope_id: envelopeId, comment });
 }
 
 export async function addTrip(claimId: string, t: Omit<Trip, "id" | "claim_id">) {
