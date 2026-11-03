@@ -4,7 +4,7 @@
 import jsQR from "jsqr";
 import type { OcrResult } from "./data";
 
-export type LocalRead = OcrResult & { source: "qr" | "texto" | "nenhum"; atcud?: string | null; nif_issuer?: string | null; legal_name?: string | null };
+export type LocalRead = OcrResult & { source: "qr" | "texto" | "nenhum"; atcud?: string | null; nif_issuer?: string | null; legal_name?: string | null; rotation?: number };
 
 type Progress = (msg: string) => void;
 
@@ -108,13 +108,40 @@ async function pdfText(pdf: any): Promise<string> {
 }
 
 // ── Tesseract ──
-async function ocrText(src: Blob | HTMLCanvasElement, progress: Progress): Promise<string> {
+function rotate(src: HTMLCanvasElement, deg: 90 | -90 | 180): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  const side = deg === 180;
+  c.width = side ? src.width : src.height;
+  c.height = side ? src.height : src.width;
+  const ctx = c.getContext("2d");
+  if (ctx) {
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate((deg * Math.PI) / 180);
+    ctx.drawImage(src, -src.width / 2, -src.height / 2);
+  }
+  return c;
+}
+// Lê o texto; se a página estiver deitada (digitalizações/fotos de lado), experimenta as rotações e fica com a mais legível
+async function ocrText(src: HTMLCanvasElement, progress: Progress): Promise<{ text: string; rotation: number }> {
   const { createWorker } = await import("tesseract.js");
   progress("A ler o texto do recibo…");
   const worker = await createWorker("por");
   try {
-    const r = await worker.recognize(src);
-    return r.data.text ?? "";
+    const tries: [number, HTMLCanvasElement][] = src.width > src.height * 1.1 ? [[-90, rotate(src, -90)], [90, rotate(src, 90)]] : [[0, src]];
+    let best = { text: "", rotation: 0, score: -1 };
+    for (const [rot, c] of tries) {
+      const r = await worker.recognize(c);
+      const text = r.data.text ?? "";
+      const score = (r.data.confidence ?? 0) + (/total/i.test(text) ? 20 : 0) + (/contribuinte|nif|nipc|iva/i.test(text) ? 10 : 0);
+      if (score > best.score) best = { text, rotation: rot, score };
+      if (score > 85) break;
+    }
+    if (best.score < 40 && tries.length === 1) {
+      // vertical mas ao contrário
+      const r = await worker.recognize(rotate(src, 180));
+      if ((r.data.confidence ?? 0) > best.score) best = { text: r.data.text ?? "", rotation: 180, score: r.data.confidence ?? 0 };
+    }
+    return { text: best.text, rotation: best.rotation };
   } finally {
     await worker.terminate();
   }
@@ -219,6 +246,7 @@ export function parseText(text: string): Partial<LocalRead> {
 export async function readReceiptLocally(blob: Blob, type: string, progress: Progress): Promise<LocalRead> {
   let qr: LocalRead | null = null;
   let text = "";
+  let rotation = 0;
   progress("A procurar o código QR…");
   if (type === "application/pdf") {
     const pdf = await loadPdf(blob);
@@ -230,19 +258,23 @@ export async function readReceiptLocally(blob: Blob, type: string, progress: Pro
     }
     if (text.replace(/\s/g, "").length < 40) {
       // PDF digitalizado (só imagem): OCR da primeira página
-      text = await ocrText(await renderPdfPage(pdf, 1, 2), progress);
+      const o = await ocrText(await renderPdfPage(pdf, 1, 2), progress);
+      text = o.text;
+      rotation = o.rotation;
     }
   } else {
     const bmp = await createImageBitmap(blob);
     const raw = await qrFromBitmap(bmp, bmp.width, bmp.height);
     if (raw) qr = parseFiscalQR(raw);
-    text = await ocrText(drawScaled(bmp, bmp.width, bmp.height, 2000), progress);
+    const o = await ocrText(drawScaled(bmp, bmp.width, bmp.height, 2000), progress);
+    text = o.text;
+    rotation = o.rotation;
   }
   const fromText = parseText(text);
   if (qr) {
     // QR manda nos valores; o texto só acrescenta nome e categoria
-    return { ...qr, client: fromText.client ?? null, legal_name: fromText.legal_name ?? null, suggested_type: fromText.suggested_type ?? null, suggested_sub: fromText.suggested_sub ?? null, others_kind: fromText.others_kind ?? null };
+    return { ...qr, rotation, client: fromText.client ?? null, legal_name: fromText.legal_name ?? null, suggested_type: fromText.suggested_type ?? null, suggested_sub: fromText.suggested_sub ?? null, others_kind: fromText.others_kind ?? null };
   }
   const anything = fromText.date || fromText.total_incl || fromText.client;
-  return { source: anything ? "texto" : "nenhum", currency: "EUR", vat_breakdown: null, total_excl: null, ...fromText };
+  return { source: anything ? "texto" : "nenhum", rotation, currency: "EUR", vat_breakdown: null, total_excl: null, ...fromText };
 }
