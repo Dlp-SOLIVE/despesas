@@ -121,6 +121,31 @@ async function ocrText(src: Blob | HTMLCanvasElement, progress: Progress): Promi
 }
 
 // ── Interpretação do texto ──
+// Rejeita lixo do OCR ("2rT gROOQ! 1 FA ISTI…"): palavras reais, poucas misturas de maiúsculas/dígitos/símbolos
+function looksLikeName(l: string): boolean {
+  const s = l.trim();
+  if (s.length < 3 || s.length > 60) return false;
+  const letters = (s.match(/[A-Za-zÀ-ÿ]/g) ?? []).length;
+  if (letters / s.length < 0.7) return false;
+  if (/[!?<>{}[\]|\\^~=_*#$%]/.test(s)) return false;
+  const words = s.split(/\s+/);
+  if (words.length > 6) return false;
+  const good = words.filter((w) => {
+    const c = w.replace(/[.,&'’-]/g, "");
+    if (!/^[A-Za-zÀ-ÿ]+$/.test(c)) return false;
+    if (c.length > 1 && !/[aeiouyàáâãéêíóôõúAEIOUYÀÁÂÃÉÊÍÓÔÕÚ]/.test(c)) return false;
+    // aceita TUDO MAIÚSCULAS, Capitalizado ou minúsculas — não mistura tipo "gROOQ"
+    return c === c.toUpperCase() || c === c.toLowerCase() || c === c[0].toUpperCase() + c.slice(1).toLowerCase();
+  }).length;
+  return good / words.length >= 0.75;
+}
+
+// Primeira página de um PDF como imagem (pré-visualização)
+export async function pdfPreview(blob: Blob): Promise<string> {
+  const pdf = await loadPdf(blob);
+  const c = await renderPdfPage(pdf, 1, 1);
+  return c.toDataURL("image/jpeg", 0.8);
+}
 const MONEY = /(\d{1,3}(?:[ .]\d{3})*[,.]\d{2})(?!\d)/g;
 const toNum = (s: string) => Number(s.replace(/[ .](?=\d{3}\b)/g, "").replace(",", "."));
 
@@ -148,8 +173,8 @@ export function parseText(text: string): Partial<LocalRead> {
   const nifs = [...t.matchAll(/\b([1235689]\d{2}) ?(\d{3}) ?(\d{3})\b/g)].map((m) => `${m[1]} ${m[2]} ${m[3]}`);
   if (nifs.length) out.nif_issuer = nifs[0];
   if (nifs.length > 1) out.nif_buyer = nifs[nifs.length - 1];
-  // nome: primeira linha "com letras" no topo do documento
-  const name = lines.slice(0, 6).find((l) => /[A-Za-zÀ-ÿ]{3,}/.test(l) && !/fatura|recibo|nif|contribuinte|original|duplicado|data|www|@/i.test(l));
+  // nome: primeira linha legível no topo; se o texto vier ilegível (foto/scan fraco), fica vazio
+  const name = lines.slice(0, 8).find((l) => looksLikeName(l) && !/fatura|recibo|nif|contribuinte|original|duplicado|data|www|@|tel[ef.:]|morada|^rua |^av\./i.test(l));
   if (name) out.client = name.replace(/\s{2,}/g, " ").slice(0, 60);
   // categoria sugerida
   const has = (re: RegExp) => re.test(low);
