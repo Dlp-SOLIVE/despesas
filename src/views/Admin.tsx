@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { AuditItem, CostCenter, ExpRole, Person, Settings } from "../types";
-import { adminDelete, adminReopen, loadAudit, updateCompany, updateProfile, updateSettings, upsertCostCenter } from "../lib/data";
+import { adminDelete, adminDeleteUser, adminReopen, loadAudit, updateCompany, updateProfile, updateSettings, upsertCostCenter } from "../lib/data";
 import { eur, fmtDateTime, periodLabel } from "../lib/format";
 import { ROLES, TYPES, TYPE_KEYS, VAT_DED, claimTotals } from "../lib/rules";
 import { Chip, Field, PageHead, StatusChip, askReason, useApp } from "../ui";
@@ -44,12 +44,17 @@ function Users() {
   const run = useRun();
   const approvers = app.refs.people.filter((p) => p.active && p.role !== "colaborador");
   const upd = (p: Person, patch: Parameters<typeof updateProfile>[1]) => void run(() => updateProfile(p.id, patch), `Alterou utilizador ${p.full_name}: ${Object.keys(patch).join(", ")}`);
+  async function del(p: Person) {
+    const reason = await askReason(`Apagar ${p.full_name} (${p.email})? A conta de acesso é eliminada. Quem tem pedidos submetidos não pode ser apagado (só desativado). Indique o motivo:`);
+    if (!reason) return;
+    await run(() => adminDeleteUser(p.id, reason), `Apagou utilizador ${p.full_name}`, `${p.full_name} apagado.`);
+  }
   const people = [...app.refs.people].sort((a, b) => Number(a.active) - Number(b.active) || a.full_name.localeCompare(b.full_name));
   return (
     <>
       <div className="tbl-wrap">
         <table>
-          <thead><tr><th>Nome</th><th>Matrícula</th><th>Empresa</th><th>Perfil</th><th>Manager</th><th>Km</th><th>Estado</th></tr></thead>
+          <thead><tr><th>Nome</th><th>Matrícula</th><th>Empresa</th><th>Perfil</th><th>Manager</th><th>Km</th><th>Estado</th><th></th></tr></thead>
           <tbody>
             {people.map((p) => (
               <tr key={p.id} className={p.active ? "" : "flag"}>
@@ -60,6 +65,7 @@ function Users() {
                 <td><select className="in bare" value={p.manager_id ?? ""} onChange={(e) => upd(p, { manager_id: e.target.value || null })}><option value="">—</option>{approvers.filter((x) => x.id !== p.id).map((x) => <option key={x.id} value={x.id}>{x.full_name}</option>)}</select></td>
                 <td><input type="checkbox" aria-label="Usa viatura pessoal" checked={p.uses_km} onChange={(e) => upd(p, { uses_km: e.target.checked })} /></td>
                 <td>{p.active ? <button className="link-button" disabled={p.id === app.me.id} onClick={() => upd(p, { active: false })}><Chip tone="ok">Ativo</Chip></button> : <button className="btn primary sm" onClick={() => upd(p, { active: true })}>Aprovar acesso</button>}</td>
+                <td>{p.id !== app.me.id && <button className="link-button" style={{ color: "var(--danger)" }} onClick={() => void del(p)}>Apagar</button>}</td>
               </tr>
             ))}
           </tbody>
