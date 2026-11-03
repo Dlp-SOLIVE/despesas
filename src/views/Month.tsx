@@ -25,7 +25,7 @@ export function MonthView() {
     return (
       <div className="app-body">
         <Empty title={`Ainda não tem pedido para ${periodLabel(period).toLowerCase()}`} action={<button className="btn primary" onClick={() => setNc(true)}>Iniciar pedido</button>}>
-          Registe os recibos ao longo do mês. A submissão abre a dia {s.open_day}.
+          Registe os recibos ao longo do mês e submeta quando estiver completo.
         </Empty>
         {nc && <NewClaimModal period={period} onClose={() => setNc(false)} />}
       </div>
