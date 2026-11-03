@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Claim, Currency, Details, ExpType, Line, Participant } from "../types";
 import { downloadReceipt, receiptURL, saveLine, uploadReceipt, type LineInput } from "../lib/data";
-import { readReceiptLocally } from "../lib/localOcr";
+import { pdfPreview, readReceiptLocally } from "../lib/localOcr";
 import { eur } from "../lib/format";
 import { TYPES, TYPE_KEYS, detailSchema, detailText, lineIssues, suggestSub } from "../lib/rules";
 import { Field, Modal, Seg, useApp } from "../ui";
@@ -26,8 +26,19 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   const [progress, setProgress] = useState("");
 
   useEffect(() => {
-    if (f.file_path && f.file_type !== "application/pdf") receiptURL(f.file_path).then(setUrl).catch(() => setUrl(null));
-    else setUrl(null);
+    let on = true;
+    if (!f.file_path) setUrl(null);
+    else if (f.file_type !== "application/pdf") receiptURL(f.file_path).then((u) => on && setUrl(u)).catch(() => on && setUrl(null));
+    else {
+      const path = f.file_path;
+      (async () => blobRef.current ?? (await downloadReceipt(path)))()
+        .then((b) => pdfPreview(b))
+        .then((u) => on && setUrl(u))
+        .catch(() => on && setUrl(null));
+    }
+    return () => {
+      on = false;
+    };
   }, [f.file_path, f.file_type]);
 
   const set = <K extends keyof LineInput>(k: K, v: LineInput[K]) => setF((p) => ({ ...p, [k]: v }));
@@ -75,7 +86,10 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
       setF((p) => {
         const n: LineInput = { ...p, details: { ...p.details }, ocr: r as Record<string, unknown> };
         if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) n.receipt_date = r.date;
-        if (r.client && (!p.client || !p.client.trim())) n.client = r.client;
+        // Entidade: primeiro a que já foi usada para este NIF emitente (recibos anteriores), depois o texto lido
+        const known = r.nif_issuer ? app.claims.flatMap((c) => c.lines).find((l) => (l.ocr as { nif_issuer?: string } | null)?.nif_issuer === r.nif_issuer && l.client?.trim())?.client : null;
+        const name = known ?? r.client;
+        if (name && (!p.client || !p.client.trim())) n.client = name;
         if (r.nif_buyer) n.nif = r.nif_buyer;
         if (typeof r.total_incl === "number") n.incl = r.total_incl;
         if (typeof r.total_excl === "number") n.excl = r.total_excl;
