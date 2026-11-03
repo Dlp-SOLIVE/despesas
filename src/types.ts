@@ -12,7 +12,6 @@ export type Person = {
   company_id: string | null;
   matricula: string | null;
   active: boolean;
-  docusign: boolean;
   uses_km: boolean;
   created_at?: string;
 };
@@ -33,7 +32,6 @@ export type Settings = {
   open_day: number;
   max_lines: number;
   retention_years: number;
-  docusign_enabled: boolean;
 };
 
 export type Participant = { name: string; company?: string };
@@ -92,17 +90,6 @@ export type HistoryItem = {
   at: string;
 };
 
-export type Signature = {
-  id: string;
-  claim_id: string;
-  step: string;
-  signer_id: string;
-  envelope_id: string;
-  status: "sent" | "completed" | "declined" | "voided";
-  signed_path: string | null;
-  completed_at: string | null;
-};
-
 export type Claim = {
   id: string;
   staff_member_id: string;
@@ -121,7 +108,6 @@ export type Claim = {
   lines: Line[];
   trips: Trip[];
   history: HistoryItem[];
-  signatures: Signature[];
 };
 
 export type Vehicle = { staff_member_id: string; model: string; plate: string };
