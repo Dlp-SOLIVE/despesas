@@ -213,15 +213,15 @@ export const STATUS: Record<string, { label: string; tone: "info" | "warn" | "er
   draft: { label: "Rascunho", tone: "info" },
   returned: { label: "Devolvido", tone: "err" },
   submitted: { label: "Aguarda manager", tone: "warn" },
-  approved_mgr: { label: "Aguarda RH", tone: "warn" },
-  validated_rh: { label: "Aguarda contabilidade", tone: "warn" },
-  posted: { label: "Lançado", tone: "ok" },
+  approved_mgr: { label: "Aguarda registo RH", tone: "warn" },
+  validated_rh: { label: "Aguarda pagamento", tone: "warn" },
+  posted: { label: "Pago", tone: "ok" },
 };
 export const ROLES: Record<string, string> = {
   colaborador: "Colaborador",
   manager: "Manager",
   rh: "Recursos Humanos",
-  contabilidade: "Contabilidade",
+  contabilidade: "Administrativo (pagamentos)",
   admin: "Administrador",
 };
 

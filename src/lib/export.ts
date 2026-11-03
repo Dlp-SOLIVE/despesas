@@ -26,7 +26,9 @@ export async function buildExcel(claim: Claim, ctx: Ctx): Promise<Blob> {
   const u = ctx.people.find((p) => p.id === claim.staff_member_id);
   const cc = ctx.costCenters.find((x) => x.code === claim.cost_center);
   const co = ctx.companies.find((x) => x.id === (cc ? cc.company_id : u?.company_id));
-  const buf = await (await fetch("/template.xlsx")).arrayBuffer();
+  const res = await fetch("/template.xlsx", { cache: "no-store" });
+  if (!res.ok || (res.headers.get("content-type") ?? "").includes("text/html")) throw new Error("Modelo Excel em falta no site (public/template.xlsx). Avise o administrador.");
+  const buf = await res.arrayBuffer();
   const wb = new Ex.Workbook();
   await wb.xlsx.load(buf);
   wb.calcProperties = { ...(wb.calcProperties ?? {}), fullCalcOnLoad: true };
@@ -77,7 +79,7 @@ export async function buildExcel(claim: Claim, ctx: Ctx): Promise<Blob> {
     const txt = `${who(h.actor_id)} · ${fmtDate(h.at)}`;
     if (h.action === "Submetido ao manager") set(F, "E45", txt);
     if (h.action === "Aprovado") set(F, "I45", txt);
-    if (h.action === "Validado") set(F, "L45", txt);
+    if (h.action === "Validado" || h.action === "Registado RH") set(F, "L45", txt);
   }
   set(K, "E7", claim.vehicle_model ?? ctx.vehicle?.model ?? "");
   set(K, "E9", claim.vehicle_plate ?? ctx.vehicle?.plate ?? "");
