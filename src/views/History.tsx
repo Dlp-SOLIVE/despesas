@@ -75,9 +75,6 @@ export function ProfileView() {
         <div>
           <div className="k">Assinatura</div>
           <p>As aprovações registadas na plataforma valem como assinatura.</p>
-          <p>DocuSign: <b>{me.docusign ? "ativo" : "não ativo"}</b>{!app.refs.settings.docusign_enabled && <span className="muted"> (desligado pelo administrador)</span>}</p>
-          <button className="btn" disabled={busy} onClick={() => void patch({ docusign: !me.docusign }, me.docusign ? "DocuSign desativado." : "DocuSign ativado.")}>{me.docusign ? "Desativar DocuSign" : "Ativar DocuSign"}</button>
-          <p className="muted small">Com DocuSign ativo, ao aprovar abre-se a DocuSign com a folha de aprovação e os recibos; depois de assinar, volta à plataforma e o pedido avança. O documento assinado fica guardado no pedido.</p>
         </div>
         <div>
           <div className="k">Viatura pessoal</div>

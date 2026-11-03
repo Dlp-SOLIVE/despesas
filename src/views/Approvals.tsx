@@ -1,7 +1,6 @@
 import { Fragment, useState } from "react";
 import type { Claim, Line } from "../types";
-import { decideClaim, docusignStart, receiptURL } from "../lib/data";
-import { buildSigningPDF } from "../lib/export";
+import { decideClaim } from "../lib/data";
 import { eur, fmtDate, num1, periodLabel } from "../lib/format";
 import { ROLES, TYPES, claimChecklist, claimTotals, detailText, lineEUR, lineIssues, tripKm } from "../lib/rules";
 import { Chip, Empty, Field, FilePreview, Kpis, PageHead, StatusChip, Thumb, Timeline, askConfirm, useApp, type AppCtx } from "../ui";
@@ -16,31 +15,6 @@ function canDecide(app: AppCtx, c: Claim): boolean {
   if (c.status === "validated_rh") return role === "contabilidade" || role === "admin";
   return false;
 }
-export function SignedDocs({ claim }: { claim: Claim }) {
-  const app = useApp();
-  const done = claim.signatures.filter((s) => s.status === "completed" && s.signed_path);
-  if (!done.length) return null;
-  const open = async (path: string) => {
-    try {
-      window.open(await receiptURL(path), "_blank", "noopener");
-    } catch (e) {
-      app.fail(e);
-    }
-  };
-  return (
-    <div style={{ marginTop: 20 }}>
-      <div className="eyebrow" style={{ marginBottom: 8 }}>Documentos assinados (DocuSign)</div>
-      <div className="actions">
-        {done.map((s) => (
-          <button key={s.id} className="btn" onClick={() => s.signed_path && void open(s.signed_path)}>
-            {s.step === "submitted" ? "Manager" : "RH"} · {app.refs.people.find((p) => p.id === s.signer_id)?.full_name ?? ""} · {fmtDate(s.completed_at)}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function queueFor(app: AppCtx): Claim[] {
   return app.claims.filter((c) => canDecide(app, c));
 }
@@ -81,8 +55,6 @@ export function ReviewView() {
   const claim = app.claims.find((c) => c.id === app.selId) ?? null;
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [comment, setComment] = useState("");
-  const dsAvailable = app.refs.settings.docusign_enabled && app.me.docusign;
-  const [ds, setDs] = useState(dsAvailable);
   const [busy, setBusy] = useState(false);
   const [prev, setPrev] = useState<Line | null>(null);
   if (!claim) return <div className="app-body"><Empty title="Pedido não encontrado" action={<button className="btn" onClick={() => app.go("aprov")}>Voltar</button>} /></div>;
@@ -103,16 +75,7 @@ export function ReviewView() {
     if (action === "approve" && !(await askConfirm(`${verb} · pedido de ${u?.full_name ?? ""} (${periodLabel(claim.period)}, ${eur(t.total)})?`))) return;
     setBusy(true);
     try {
-      if (action === "approve" && ds && dsAvailable && !posting) {
-        // Assinatura real: envelope DocuSign com a folha de aprovação + recibos; volta à plataforma no fim
-        const stepLabel = claim.status === "submitted" ? "Aprovação do manager" : "Registo RH";
-        const b64 = await buildSigningPDF(claim, app.refs, app.me, stepLabel);
-        const { url, envelopeId } = await docusignStart(claim.id, b64, `${window.location.origin}/?ds=1`);
-        window.sessionStorage.setItem("despesas_ds", JSON.stringify({ claim: claim.id, envelope: envelopeId, comment: comment.trim() }));
-        window.location.href = url;
-        return;
-      }
-      await decideClaim(claim.id, action, comment.trim(), Object.fromEntries(Object.entries(notes).filter(([, v]) => v.trim())), false, posting ? { paidOn, ref: payRef.trim() } : undefined);
+      await decideClaim(claim.id, action, comment.trim(), Object.fromEntries(Object.entries(notes).filter(([, v]) => v.trim())), posting ? { paidOn, ref: payRef.trim() } : undefined);
       await app.reload();
       app.toast(action === "return" ? `Pedido devolvido a ${u?.full_name ?? ""}.` : `Pedido de ${u?.full_name ?? ""}: ${verb.toLowerCase()} ✓`);
       app.go("aprov", null);
@@ -164,7 +127,6 @@ export function ReviewView() {
         </>
       )}
       <div style={{ marginTop: 28 }}><div className="eyebrow" style={{ marginBottom: 8 }}>Histórico</div><Timeline claim={claim} people={app.refs.people} /></div>
-      <SignedDocs claim={claim} />
       {act && (
         <div className="decide">
           {posting && (
@@ -177,7 +139,6 @@ export function ReviewView() {
             <textarea className="in" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={posting ? "ex.: pago no lote de novembro" : "ex.: falta a lista de participantes no jantar de dia 5"} />
           </Field>
           <div className="decide-row">
-            {!posting && dsAvailable && <label className="cb"><input type="checkbox" checked={ds} onChange={(e) => setDs(e.target.checked)} /> Assinar com DocuSign <span className="muted">(abre a DocuSign e volta aqui)</span></label>}
             <span className="push"></span>
             <button className="btn" disabled={busy || !comment.trim()} onClick={() => void decide("return")}>Devolver ao colaborador</button>
             <button className="btn primary" disabled={busy || flagged.length > 0} onClick={() => void decide("approve")}>{verb}</button>
