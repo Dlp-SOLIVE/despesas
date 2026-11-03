@@ -18,7 +18,7 @@ export function knownClient(claims: Claim[], r: LocalRead): string | null {
 }
 
 // Junta o resultado da leitura a um recibo (não apaga o que o colaborador já escreveu)
-export function applyRead(p: LineInput, r: LocalRead, claims: Claim[]): LineInput {
+export function applyRead(p: LineInput, r: LocalRead, claims: Claim[], companyNifs: string[] = []): LineInput {
   const n: LineInput = { ...p, details: { ...p.details }, ocr: r as Record<string, unknown> };
   if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) n.receipt_date = r.date;
   const kl = knownLine(claims, r);
@@ -26,7 +26,11 @@ export function applyRead(p: LineInput, r: LocalRead, claims: Claim[]): LineInpu
   if (name && (!p.client || !p.client.trim())) n.client = name;
   const legal = kl?.details?.legal ?? r.legal_name;
   if (legal && !n.details.legal) n.details.legal = legal;
-  if (r.nif_buyer) n.nif = r.nif_buyer;
+  // NIF da empresa: se aparecer em qualquer parte do texto lido, é esse (mais fiável do que adivinhar entre os NIFs do recibo)
+  const digitsText = (r.raw_text ?? "").replace(/\D/g, "");
+  const own = companyNifs.find((x) => x.replace(/\D/g, "").length === 9 && digitsText.includes(x.replace(/\D/g, "")));
+  if (own) n.nif = own;
+  else if (r.nif_buyer) n.nif = r.nif_buyer;
   if (typeof r.total_incl === "number") n.incl = r.total_incl;
   if (typeof r.total_excl === "number") n.excl = r.total_excl;
   else if (r.vat_breakdown === false && typeof r.total_incl === "number") n.excl = r.total_incl;
@@ -118,13 +122,13 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
         date: !!(r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)),
         client: !!r.client,
         legal: !!r.legal_name,
-        nif: !!r.nif_buyer,
+        nif: !!r.nif_buyer || app.refs.companies.some((c) => (r.raw_text ?? "").replace(/\D/g, "").includes(c.nif.replace(/\D/g, ""))),
         incl: typeof r.total_incl === "number",
         excl: typeof r.total_excl === "number",
       };
       flags.client = !!knownClient(app.claims, r) || flags.client;
       setF((p) => {
-        const n = applyRead(p, r, app.claims);
+        const n = applyRead(p, r, app.claims, app.refs.companies.map((c) => c.nif));
         return n;
       });
       if (r.vat_breakdown === false) setNoVat(true);
@@ -181,6 +185,13 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
             <button className="btn dark" disabled={!f.file_path || !!busy} onClick={() => void read()}>{busy === "ocr" ? progress || "A ler recibo…" : "Ler recibo novamente"}</button>
             <span className="muted">Lido automaticamente ao carregar: código QR das faturas portuguesas (dados exatos) ou texto do recibo. Tudo no seu computador; nada é enviado para serviços externos. Todos os campos podem ser corrigidos à mão.</span>
           </div>
+          {f.ocr && (
+            <details className="muted small" style={{ marginBottom: 8 }}>
+              <summary style={{ cursor: "pointer" }}>Texto lido do recibo</summary>
+              <div>Origem: {String((f.ocr as { source?: string }).source ?? "—")} · rotação {rot}° · versão 03-11-c</div>
+              <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, maxHeight: 180, overflow: "auto", background: "var(--black-04)", padding: 8, margin: "6px 0 0" }}>{String((f.ocr as { raw_text?: string }).raw_text ?? "(sem texto)")}</pre>
+            </details>
+          )}
           <div className="issues">{issues.length ? issues.map((i, k) => <div key={k} className={i.lv}>{i.msg}</div>) : <div className="ok">Sem alertas</div>}</div>
         </div>
         <div className="form">
