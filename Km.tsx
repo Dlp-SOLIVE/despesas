@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { addFav, addTrip, deleteFav, deleteTrip, saveVehicle, setInsurance } from "../lib/data";
 import { eur, fmtDate, num1 } from "../lib/format";
-import { claimTotals, tripKm } from "../lib/rules";
+import { claimTotals, fmtPlate, plateOk, tripKm } from "../lib/rules";
 import { Empty, Field, useApp } from "../ui";
 import { ClaimHeader, canEdit, myClaim } from "./common";
 import { MonthView } from "./Month";
@@ -34,6 +34,7 @@ export function KmView() {
   }
   const saveVeh = () => {
     if (model === (app.vehicle?.model ?? "") && plate === (app.vehicle?.plate ?? "")) return;
+    if (plate && !plateOk(plate)) return app.toast("Matrícula inválida: use o formato XX-XX-XX.", "err");
     void run(() => saveVehicle({ staff_member_id: app.me.id, model: model.trim(), plate: plate.trim().toUpperCase() }), "Viatura guardada.");
   };
   const add = () =>
@@ -52,7 +53,7 @@ export function KmView() {
       <ClaimHeader claim={claim} eyebrow={`Détail IK · ${num1(t.km)} km · ${eur(t.kmEUR)}`} actions={<button className="btn" onClick={() => app.go("mes", claim.id)}>Ver recibos</button>} />
       <div className="veh">
         <Field label="Viatura pessoal"><input className="in" disabled={!ed} value={model} placeholder="Marca e modelo" onChange={(e) => setModel(e.target.value)} onBlur={saveVeh} /></Field>
-        <Field label="Matrícula"><input className="in" disabled={!ed} value={plate} placeholder="AA-00-AA" onChange={(e) => setPlate(e.target.value)} onBlur={saveVeh} /></Field>
+        <Field label="Matrícula" hint={plate && !plateOk(plate) ? "Formato XX-XX-XX" : undefined}><input className="in" disabled={!ed} value={plate} placeholder="XX-XX-XX" maxLength={8} onChange={(e) => setPlate(fmtPlate(e.target.value))} onBlur={saveVeh} /></Field>
         <Field label="Taxa"><div className="in ro">{eur(t.kmRate)} / km</div></Field>
       </div>
       {ed && (

@@ -203,7 +203,7 @@ export function claimChecklist(
     { ok: !has(/Details|pessoas|empresa dos/).length, label: "Details completos, com participantes nas refeições", refs: has(/Details|pessoas|empresa dos/), warn: [] },
     { ok: !has(/Valores|IVA|câmbio|Entidade/).length, label: "Valores e IVA coerentes (sem IVA = com IVA quando não discriminado)", refs: has(/Valores|IVA|câmbio|Entidade/), warn: has(/IVA/, "warn") },
     { ok: !has(/NIF/).length, label: "NIF da empresa em todos os recibos", refs: has(/NIF/), warn: has(/NIF/, "warn") },
-    { ok: !c.trips.length || !!(veh && veh.model && veh.plate), label: "Viatura identificada para os quilómetros", refs: [], warn: [] },
+    { ok: !c.trips.length || !!(veh && veh.model && plateOk(veh.plate)), label: "Viatura identificada para os quilómetros (matrícula XX-XX-XX)", refs: [], warn: [] },
     { ok: !c.trips.length || c.insurance_declared, label: "Declaração de seguro automóvel para quilómetros", refs: [], warn: [] },
     { ok: open, label: open ? `Submissão aberta (a partir do dia ${ctx.settings.open_day})` : `Submissão abre a ${ctx.settings.open_day} de ${MONTHS_PT[pm - 1]}`, refs: [], warn: [] },
   ];
@@ -229,3 +229,10 @@ export const ROLES: Record<string, string> = {
 export function packageName(c: Claim, u: Person | undefined) {
   return `${c.period.replace("-", "")} – Expense Claim Form – ${u?.full_name ?? ""} ${u?.matricula ?? ""}`.trim();
 }
+
+// Matrícula da viatura: XX-XX-XX (letras ou algarismos)
+export const fmtPlate = (v: string) => {
+  const c = v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+  return c.match(/.{1,2}/g)?.join("-") ?? "";
+};
+export const plateOk = (v: string) => /^[A-Z0-9]{2}-[A-Z0-9]{2}-[A-Z0-9]{2}$/.test(v);

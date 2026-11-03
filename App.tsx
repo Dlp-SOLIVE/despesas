@@ -80,8 +80,15 @@ function RequestAccess({ email, onDone, onSignOut }: { email: string; onDone: ()
   const [km, setKm] = useState(saved.km ?? false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  // Se os dados já foram preenchidos ao criar a conta, envia o pedido sem pedir outra vez
+  useEffect(() => {
+    if (saved.name && saved.mat) void send();
+  }, []);
   async function submit(e: FormEvent) {
     e.preventDefault();
+    await send();
+  }
+  async function send() {
     setBusy(true);
     setMsg(null);
     try {
@@ -100,7 +107,7 @@ function RequestAccess({ email, onDone, onSignOut }: { email: string; onDone: ()
       <p className="muted">Sessão iniciada como {email}. Se já usa o Sistema de Compras, a conta é a mesma.</p>
       <form className="login-form" onSubmit={submit}>
         <label>Nome completo<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label>Matrícula<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
+        <label>Nº de colaborador (MAT)<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
         <label>Empresa<select value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <KmCheck value={km} onChange={setKm} />
         <button className="btn primary" disabled={busy || !name || !mat} type="submit">Pedir acesso</button>
@@ -182,7 +189,7 @@ function Login() {
         <form className="login-form" onSubmit={register}>
           <label>Email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>
           <label>Nome completo<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
-          <label>Matrícula<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
+          <label>Nº de colaborador (MAT)<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
           <label>Empresa<select value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
           <KmCheck value={km} onChange={setKm} />
           <label>Palavra-passe<input type="password" required minLength={6} value={pw} onChange={(e) => setPw(e.target.value)} /></label>
