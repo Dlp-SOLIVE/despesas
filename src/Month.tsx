@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { Line } from "../types";
-import { deleteLine, saveLine, uploadReceipt } from "../lib/data";
+import { deleteLine, saveLine, uploadReceipt, type LineInput } from "../lib/data";
 import { readReceiptLocally } from "../lib/localOcr";
 import { fmtDate, periodLabel, periodOf } from "../lib/format";
 import { TYPES, claimChecklist, claimTotals, detailText, lineEUR, lineIssues } from "../lib/rules";
@@ -53,7 +53,7 @@ export function MonthView() {
       setBulk(`A ler recibo ${i + 1} de ${files.length}…`);
       try {
         const up = await uploadReceipt(file, app.me.id, claim.id);
-        let line = { ...blankLine(++no), file_path: up.path, file_type: up.type };
+        let line: LineInput = { ...blankLine(++no), file_path: up.path, file_type: up.type };
         try {
           const r = await readReceiptLocally(file, up.type, () => undefined);
           if (r.source !== "nenhum") line = applyRead(line, r, app.claims);
