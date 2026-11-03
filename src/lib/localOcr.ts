@@ -4,7 +4,7 @@
 import jsQR from "jsqr";
 import type { OcrResult } from "./data";
 
-export type LocalRead = OcrResult & { source: "qr" | "texto" | "nenhum"; atcud?: string | null; nif_issuer?: string | null; legal_name?: string | null; rotation?: number };
+export type LocalRead = OcrResult & { source: "qr" | "texto" | "nenhum"; atcud?: string | null; nif_issuer?: string | null; legal_name?: string | null; rotation?: number; raw_text?: string };
 
 type Progress = (msg: string) => void;
 
@@ -195,13 +195,30 @@ export function parseText(text: string): Partial<LocalRead> {
       for (const n of ms) if (best === null || n > best) best = n;
     }
   }
+  if (best === null) {
+    // sem linha "Total" legível: maior valor do documento (o colaborador confirma)
+    const all = [...t.matchAll(MONEY)].map((m) => toNum(m[1])).filter((n) => n > 0 && n < 10000);
+    if (all.length) best = Math.max(...all);
+  }
   if (best !== null) out.total_incl = best;
+  // Sem QR: se o recibo tiver uma só taxa de IVA (23/13/6), calcula o valor sem IVA
+  const rates = new Set<number>();
+  for (const m of t.matchAll(/\b(23|13|6)\s?%/g)) rates.add(Number(m[1]));
+  for (const l of lines) {
+    const m = l.match(/\s(23|13|6)\s+\d{1,4}[.,]\d{2}\s*$/);
+    if (m) rates.add(Number(m[1]));
+  }
+  if (best !== null && rates.size === 1) {
+    const rate = [...rates][0];
+    out.total_excl = Math.round((best / (1 + rate / 100)) * 100) / 100;
+    out.vat_breakdown = true;
+  }
   // NIFs de 9 dígitos
   const nifs = [...t.matchAll(/\b([1235689]\d{2}) ?(\d{3}) ?(\d{3})\b/g)].map((m) => `${m[1]} ${m[2]} ${m[3]}`);
   if (nifs.length) out.nif_issuer = nifs[0];
   if (nifs.length > 1) out.nif_buyer = nifs[nifs.length - 1];
   // Denominação legal: linha com a forma jurídica (Lda, Unipessoal, S.A.…), juntando a linha anterior se o nome vier partido
-  const LEGAL = /\b(l\.?da|limitada|unipessoal|s\.\s?a\.?|sa|s\.?g\.?p\.?s|sociedade|crl)\.?\s*$/i;
+  const LEGAL = /\b(l\.?da|limitada|unipessoal|s\.\s?a|sa|s\.?g\.?p\.?s|sociedade|crl)[\s.,;:»"'’]*$/i;
   const ADDR = /\d{4}-\d{3}|^(av|rua|r\.|largo|praça|pc|estrada|travessa|calçada)\b|nif|nipc|contribuinte|capital|matr[ií]cula|tel[ef.:]/i;
   const top = lines.slice(0, 20);
   let legalIdx = -1;
@@ -211,13 +228,13 @@ export function parseText(text: string): Partial<LocalRead> {
       let name = top[i];
       // só junta a linha anterior se esta linha, sem a forma jurídica, tiver uma só palavra ("Nabeiro, Unipessoal Lda.")
       let core = top[i];
-      for (let k = 0; k < 3; k++) core = core.replace(/[\s,]*(l\.?da|limitada|unipessoal|s\.\s?a|sa|s\.?g\.?p\.?s|sociedade|crl)\.?\s*$/i, "");
+      for (let k = 0; k < 3; k++) core = core.replace(/[\s,]*(l\.?da|limitada|unipessoal|s\.\s?a|sa|s\.?g\.?p\.?s|sociedade|crl)[\s.,;:»"'’]*$/i, "");
       const partial = core.trim().split(/\s+/).filter(Boolean).length <= 1;
       if (partial && i > 0 && !ADDR.test(top[i - 1]) && /^[A-Za-zÀ-ÿ]/.test(top[i - 1]) && !/[,.]\s*$/.test(top[i - 1]) && top[i - 1].length < 45) {
         name = top[i - 1] + " " + top[i];
         legalIdx = i - 1;
       }
-      out.legal_name = name.replace(/\s*,\s*/g, ", ").replace(/\s{2,}/g, " ").trim().slice(0, 90);
+      out.legal_name = name.replace(/[\s;:»"'’]+$/, "").replace(/\s*,\s*/g, ", ").replace(/\s{2,}/g, " ").trim().slice(0, 90);
       break;
     }
   }
@@ -237,7 +254,7 @@ export function parseText(text: string): Partial<LocalRead> {
   else if (has(/hotel|alojamento|pousada|hostel|estadia/)) { out.suggested_type = "FDD"; out.suggested_sub = "Hotels"; }
   else if (has(/comboio|\bcp\b|alfa pendular|intercidades|comboios de portugal/)) { out.suggested_type = "FDD"; out.suggested_sub = "Train Ticket"; }
   else if (has(/\btap\b|ryanair|easyjet|voo|flight|boarding/)) { out.suggested_type = "FDD"; out.suggested_sub = "Flight ticket"; }
-  else if (has(/restaurante|tasca|marisqueira|churrasqueira|pizzaria|sushi|refei[çc][ãa]o|couvert|prato|sobremesa|bebida|caf[ée]\b|menu/)) { out.suggested_type = "FDD"; out.suggested_sub = "Restaurants"; }
+  else if (has(/restaurante|tasca|marisqueira|churrasqueira|pizzaria|sushi|refei[çc][ãa]o|couvert|prato|sobremesa|bebida|caf[ée]\b|cafetaria|pastelaria|padaria|snack|\bbar\b|cervejaria|\bgin\b|cerveja|vinho|imperial|menu/)) { out.suggested_type = "FDD"; out.suggested_sub = "Restaurants"; }
   else if (has(/papelaria|toner|staples|material de escrit/)) { out.suggested_type = "OFF"; out.suggested_sub = "Office supplies"; }
   return out;
 }
@@ -273,8 +290,8 @@ export async function readReceiptLocally(blob: Blob, type: string, progress: Pro
   const fromText = parseText(text);
   if (qr) {
     // QR manda nos valores; o texto só acrescenta nome e categoria
-    return { ...qr, rotation, client: fromText.client ?? null, legal_name: fromText.legal_name ?? null, suggested_type: fromText.suggested_type ?? null, suggested_sub: fromText.suggested_sub ?? null, others_kind: fromText.others_kind ?? null };
+    return { ...qr, rotation, raw_text: text.slice(0, 1500), client: fromText.client ?? null, legal_name: fromText.legal_name ?? null, suggested_type: fromText.suggested_type ?? null, suggested_sub: fromText.suggested_sub ?? null, others_kind: fromText.others_kind ?? null };
   }
   const anything = fromText.date || fromText.total_incl || fromText.client;
-  return { source: anything ? "texto" : "nenhum", rotation, currency: "EUR", vat_breakdown: null, total_excl: null, ...fromText };
+  return { source: anything ? "texto" : "nenhum", rotation, raw_text: text.slice(0, 1500), currency: "EUR", vat_breakdown: null, total_excl: null, ...fromText };
 }
