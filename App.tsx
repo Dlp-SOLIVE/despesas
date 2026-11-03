@@ -104,7 +104,7 @@ function RequestAccess({ email, onDone, onSignOut }: { email: string; onDone: ()
   return (
     <div className="login-screen"><section className="login-panel"><Brand />
       <h2>Pedir acesso às Despesas</h2>
-      <p className="muted">Sessão iniciada como {email}. Se já usa o Sistema de Compras, a conta é a mesma.</p>
+      <p className="muted">Sessão iniciada como {email}.</p>
       <form className="login-form" onSubmit={submit}>
         <label>Nome completo<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label>Nº de colaborador (MAT)<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
@@ -147,7 +147,7 @@ function Login() {
     setBusy(true);
     setMsg(null);
     window.localStorage.setItem(PENDING_KEY, JSON.stringify({ name, mat, company, km }));
-    const { data, error } = await supabase.auth.signUp({ email, password: pw, options: { data: { full_name: name } } });
+    const { data, error } = await supabase.auth.signUp({ email, password: pw, options: { data: { full_name: name }, emailRedirectTo: window.location.origin } });
     if (error) {
       setBusy(false);
       return setMsg(error.message);
@@ -160,7 +160,7 @@ function Login() {
         // volta a pedir no ecrã seguinte
       }
     } else {
-      setMsg("Conta criada. Confirme o email (se lhe for pedido) e entre: o pedido de acesso fica a aguardar o administrador. Se já tinha conta no Sistema de Compras, entre com essa palavra-passe.");
+      setMsg("Conta criada. Confirme o email (se lhe for pedido) e entre: o pedido de acesso fica a aguardar o administrador.");
       setMode("login");
     }
     setBusy(false);
@@ -177,7 +177,6 @@ function Login() {
     <div className="login-screen"><section className="login-panel"><Brand />
       {mode === "login" && (
         <form className="login-form" onSubmit={signIn}>
-          <p className="muted" style={{ margin: 0 }}>Use a mesma conta do Sistema de Compras, se já tiver.</p>
           <label>Email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>
           <label>Palavra-passe<input type="password" required value={pw} onChange={(e) => setPw(e.target.value)} /></label>
           <button className="btn primary" disabled={busy} type="submit">Entrar</button>
