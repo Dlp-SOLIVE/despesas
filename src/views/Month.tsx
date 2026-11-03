@@ -56,7 +56,7 @@ export function MonthView() {
         let line: LineInput = { ...blankLine(++no), file_path: up.path, file_type: up.type };
         try {
           const r = await readReceiptLocally(file, up.type, () => undefined);
-          if (r.source !== "nenhum") line = applyRead(line, r, app.claims);
+          if (r.source !== "nenhum") line = applyRead(line, r, app.claims, app.refs.companies.map((c) => c.nif));
         } catch {
           // fica para preencher à mão
         }
