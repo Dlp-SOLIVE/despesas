@@ -152,6 +152,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   const schema = detailSchema(f.sub);
 
   async function save() {
+    if (errs) return app.toast("Preencha todos os campos obrigatórios antes de guardar.", "err");
     setBusy("save");
     try {
       await saveLine(claim.id, { ...f, id: line?.id, excl: noVat ? f.incl : f.excl });
@@ -169,9 +170,9 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   return (
     <Modal wide title={`${line ? "Editar" : "Novo"} recibo · nº ${f.no}`} onClose={onClose} footer={
       <>
-        <span className="muted push-left">{errs ? `${errs} erro(s): pode guardar, mas não submeter` : "Recibo conforme"}</span>
+        <span className={errs ? "push-left" : "muted push-left"} style={errs ? { color: "var(--danger)" } : undefined}>{errs ? `Faltam ${errs} campo(s) obrigatório(s) — ver a lista à esquerda` : "Recibo conforme"}</span>
         <button className="btn" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={!!busy} onClick={() => void save()}>{busy === "save" ? "A guardar…" : "Guardar recibo"}</button>
+        <button className="btn primary" disabled={!!busy || errs > 0} title={errs ? "Preencha todos os campos obrigatórios (procedimento RH)" : undefined} onClick={() => void save()}>{busy === "save" ? "A guardar…" : "Guardar recibo"}</button>
       </>
     }>
       <div className="rc-grid">

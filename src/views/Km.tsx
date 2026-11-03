@@ -18,7 +18,8 @@ export function KmView() {
   if (!claim) return <MonthView />;
   const ed = canEdit(app, claim) && claim.staff_member_id === app.me.id;
   const t = claimTotals(claim, app.refs.settings);
-  const ok = n.trip_date && n.origin.trim() && n.dest.trim() && n.purpose.trim() && Number(n.km) > 0;
+  const ok = claim.insurance_declared && plateOk(plate) && model.trim() && n.trip_date && n.origin.trim() && n.dest.trim() && n.purpose.trim() && Number(n.km) > 0;
+  const kmNum = Number(n.km) || 0;
 
   async function run(fn: () => Promise<void>, msg?: string) {
     setBusy(true);
@@ -56,14 +57,19 @@ export function KmView() {
         <Field label="Matrícula" hint={plate && !plateOk(plate) ? "Formato XX-XX-XX" : undefined}><input className="in" disabled={!ed} value={plate} placeholder="XX-XX-XX" maxLength={8} onChange={(e) => setPlate(fmtPlate(e.target.value))} onBlur={saveVeh} /></Field>
         <Field label="Taxa"><div className="in ro">{eur(t.kmRate)} / km</div></Field>
       </div>
-      {ed && (
+      <label className={claim.insurance_declared ? "notice cb" : "notice cb warn-n"} style={{ marginBottom: 16 }}>
+        <input type="checkbox" disabled={!ed || busy} checked={claim.insurance_declared} onChange={(e) => { const v = e.target.checked; void run(async () => { await setInsurance(claim.id, v); if (v) app.log(`Declarou seguro automóvel · ${claim.period}`); }); }} />
+        <span>Declaro ter seguro automóvel válido para a viatura indicada e assumo o risco em caso de acidente. <span className="muted">Obrigatório antes de registar deslocações, em cada pedido.</span></span>
+      </label>
+      {ed && !claim.insurance_declared && <div className="notice warn-n" style={{ marginBottom: 16 }}>Para registar deslocações, preencha a viatura e a matrícula e assinale a declaração de seguro.</div>}
+      {ed && claim.insurance_declared && (
         <>
           {app.favs.length > 0 && (
             <div className="opts" style={{ margin: "4px 0 16px" }}>
               <span className="optlab">Trajetos frequentes</span>
               {app.favs.map((fv) => (
                 <span key={fv.id} className="favchip">
-                  <button type="button" disabled={busy} title="Adicionar com a data de hoje" onClick={() => void run(() => addTrip(claim.id, { trip_date: app.today, origin: fv.origin, dest: fv.dest, purpose: fv.purpose, km: fv.km, round_trip: fv.round_trip }), `Trajeto adicionado a ${fmtDate(app.today)}.`)}>
+                  <button type="button" disabled={busy || !plateOk(plate) || !model.trim()} title="Adicionar com a data de hoje" onClick={() => void run(() => addTrip(claim.id, { trip_date: app.today, origin: fv.origin, dest: fv.dest, purpose: fv.purpose, km: fv.km, round_trip: fv.round_trip }), `Trajeto adicionado a ${fmtDate(app.today)}.`)}>
                     {fv.dest.split(",")[0]} · {num1(fv.km)} km{fv.round_trip ? " ⇄" : ""}
                   </button>
                   <button type="button" className="x-sm" aria-label="Remover dos frequentes" onClick={() => void run(() => deleteFav(fv.id))}>×</button>
@@ -76,7 +82,7 @@ export function KmView() {
             <Field label="Origem"><input className="in" value={n.origin} placeholder="Morada de partida" onChange={(e) => setN({ ...n, origin: e.target.value })} /></Field>
             <Field label="Destino"><input className="in" value={n.dest} placeholder="Obra, cliente, morada" onChange={(e) => setN({ ...n, dest: e.target.value })} /></Field>
             <Field label="Motivo / projeto"><input className="in" value={n.purpose} placeholder="Reunião de obra" onChange={(e) => setN({ ...n, purpose: e.target.value })} /></Field>
-            <Field label="Km (um sentido)"><input className="in num" type="number" step="0.1" min="0" value={n.km} onChange={(e) => setN({ ...n, km: e.target.value })} /></Field>
+            <Field label="Distância (km)" hint={kmNum ? (n.round_trip ? `Ida e volta: 2 × ${num1(kmNum)} = ${num1(kmNum * 2)} km` : `Só ida: ${num1(kmNum)} km`) : "Distância de origem a destino"}><input className="in num" type="number" step="0.1" min="0" value={n.km} onChange={(e) => setN({ ...n, km: e.target.value })} /></Field>
             <div className="tf-end">
               <label className="cb"><input type="checkbox" checked={n.round_trip} onChange={(e) => setN({ ...n, round_trip: e.target.checked })} /> Ida e volta</label>
               <label className="cb"><input type="checkbox" checked={fav} onChange={(e) => setFav(e.target.checked)} /> Guardar como frequente</label>
@@ -103,12 +109,6 @@ export function KmView() {
         </div>
       ) : (
         <Empty title="Sem trajetos neste mês">Registe as deslocações com viatura pessoal. O total segue para a secção 3 do formulário.</Empty>
-      )}
-      {trips.length > 0 && (
-        <label className={claim.insurance_declared ? "notice cb" : "notice cb warn-n"} style={{ marginTop: 16 }}>
-          <input type="checkbox" disabled={!ed || busy} checked={claim.insurance_declared} onChange={(e) => { const v = e.target.checked; void run(async () => { await setInsurance(claim.id, v); if (v) app.log(`Declarou seguro automóvel · ${claim.period}`); }); }} />
-          <span>Declaro ter seguro automóvel válido para a viatura indicada e assumo o risco em caso de acidente. <span className="muted">Obrigatório em cada pedido.</span></span>
-        </label>
       )}
     </div>
   );
