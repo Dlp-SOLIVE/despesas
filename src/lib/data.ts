@@ -183,6 +183,15 @@ export async function decideClaim(id: string, action: "approve" | "return", comm
 export async function adminReopen(id: string, reason: string) {
   check(await sb().rpc("exp_admin_reopen", { p_claim: id, p_reason: reason }));
 }
+export async function adminDeleteUser(staffId: string, reason: string) {
+  // remove primeiro as imagens dos rascunhos (a base de dados apaga o resto)
+  const { data: drafts } = await sb().from("exp_claims").select("id, status, submitted_at, lines:exp_lines(file_path)").eq("staff_member_id", staffId);
+  const paths = ((drafts ?? []) as { status: string; submitted_at: string | null; lines: { file_path: string | null }[] }[])
+    .filter((c) => c.status === "draft" && !c.submitted_at)
+    .flatMap((c) => c.lines.map((l) => l.file_path).filter((p): p is string => !!p));
+  check(await sb().rpc("exp_admin_delete_user", { p_staff: staffId, p_reason: reason }));
+  if (paths.length) await sb().storage.from(BUCKET).remove(paths);
+}
 export async function adminDelete(id: string, reason: string) {
   check(await sb().rpc("exp_admin_delete", { p_claim: id, p_reason: reason }));
 }
