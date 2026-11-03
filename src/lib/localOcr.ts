@@ -4,7 +4,7 @@
 import jsQR from "jsqr";
 import type { OcrResult } from "./data";
 
-export type LocalRead = OcrResult & { source: "qr" | "texto" | "nenhum"; atcud?: string | null; nif_issuer?: string | null };
+export type LocalRead = OcrResult & { source: "qr" | "texto" | "nenhum"; atcud?: string | null; nif_issuer?: string | null; legal_name?: string | null };
 
 type Progress = (msg: string) => void;
 
@@ -173,8 +173,31 @@ export function parseText(text: string): Partial<LocalRead> {
   const nifs = [...t.matchAll(/\b([1235689]\d{2}) ?(\d{3}) ?(\d{3})\b/g)].map((m) => `${m[1]} ${m[2]} ${m[3]}`);
   if (nifs.length) out.nif_issuer = nifs[0];
   if (nifs.length > 1) out.nif_buyer = nifs[nifs.length - 1];
-  // nome: primeira linha legível no topo; se o texto vier ilegível (foto/scan fraco), fica vazio
-  const name = lines.slice(0, 8).find((l) => looksLikeName(l) && !/fatura|recibo|nif|contribuinte|original|duplicado|data|www|@|tel[ef.:]|morada|^rua |^av\./i.test(l));
+  // Denominação legal: linha com a forma jurídica (Lda, Unipessoal, S.A.…), juntando a linha anterior se o nome vier partido
+  const LEGAL = /\b(l\.?da|limitada|unipessoal|s\.\s?a\.?|sa|s\.?g\.?p\.?s|sociedade|crl)\.?\s*$/i;
+  const ADDR = /\d{4}-\d{3}|^(av|rua|r\.|largo|praça|pc|estrada|travessa|calçada)\b|nif|nipc|contribuinte|capital|matr[ií]cula|tel[ef.:]/i;
+  const top = lines.slice(0, 20);
+  let legalIdx = -1;
+  for (let i = 0; i < top.length; i++) {
+    if (LEGAL.test(top[i]) && !ADDR.test(top[i])) {
+      legalIdx = i;
+      let name = top[i];
+      // só junta a linha anterior se esta linha, sem a forma jurídica, tiver uma só palavra ("Nabeiro, Unipessoal Lda.")
+      let core = top[i];
+      for (let k = 0; k < 3; k++) core = core.replace(/[\s,]*(l\.?da|limitada|unipessoal|s\.\s?a|sa|s\.?g\.?p\.?s|sociedade|crl)\.?\s*$/i, "");
+      const partial = core.trim().split(/\s+/).filter(Boolean).length <= 1;
+      if (partial && i > 0 && !ADDR.test(top[i - 1]) && /^[A-Za-zÀ-ÿ]/.test(top[i - 1]) && !/[,.]\s*$/.test(top[i - 1]) && top[i - 1].length < 45) {
+        name = top[i - 1] + " " + top[i];
+        legalIdx = i - 1;
+      }
+      out.legal_name = name.replace(/\s*,\s*/g, ", ").replace(/\s{2,}/g, " ").trim().slice(0, 90);
+      break;
+    }
+  }
+  // Designação comercial: linha legível acima da morada/denominação legal (os logótipos nem sempre se leem)
+  const stop = top.findIndex((l) => ADDR.test(l));
+  const lim = [legalIdx, stop].filter((x) => x >= 0).reduce((a, b) => Math.min(a, b), 8);
+  const name = top.slice(0, lim).find((l) => looksLikeName(l) && /[A-ZÀ-Ý]/.test(l) && l.replace(/[^A-Za-zÀ-ÿ]/g, "").length >= 4 && !/fatura|recibo|original|duplicado|www|@/i.test(l));
   if (name) out.client = name.replace(/\s{2,}/g, " ").slice(0, 60);
   // categoria sugerida
   const has = (re: RegExp) => re.test(low);
@@ -218,7 +241,7 @@ export async function readReceiptLocally(blob: Blob, type: string, progress: Pro
   const fromText = parseText(text);
   if (qr) {
     // QR manda nos valores; o texto só acrescenta nome e categoria
-    return { ...qr, client: fromText.client ?? null, suggested_type: fromText.suggested_type ?? null, suggested_sub: fromText.suggested_sub ?? null, others_kind: fromText.others_kind ?? null };
+    return { ...qr, client: fromText.client ?? null, legal_name: fromText.legal_name ?? null, suggested_type: fromText.suggested_type ?? null, suggested_sub: fromText.suggested_sub ?? null, others_kind: fromText.others_kind ?? null };
   }
   const anything = fromText.date || fromText.total_incl || fromText.client;
   return { source: anything ? "texto" : "nenhum", currency: "EUR", vat_breakdown: null, total_excl: null, ...fromText };
