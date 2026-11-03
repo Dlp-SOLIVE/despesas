@@ -115,6 +115,8 @@ export type Claim = {
   km_rate: number | null;
   submitted_at: string | null;
   posted_at: string | null;
+  paid_on: string | null;
+  payment_ref: string | null;
   created_at: string;
   lines: Line[];
   trips: Trip[];

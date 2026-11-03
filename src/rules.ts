@@ -165,7 +165,7 @@ export function lineIssues(l: Line, ctx: RuleCtx): Issue[] {
     if (r > 0.5 && ![6, 13, 23].some((v) => Math.abs(v - r) < 0.6)) out.push({ lv: "warn", msg: `Taxa de IVA invulgar (${r.toFixed(1)} %)` });
   }
   if (l.currency !== "EUR" && !(Number(l.rate) > 0)) out.push({ lv: "err", msg: "Taxa de câmbio em falta" });
-  if (!l.nif) out.push({ lv: "warn", msg: "NIF não indicado" });
+  if (!l.nif) out.push({ lv: "err", msg: "NIF da empresa em falta no recibo" });
   else if (company && digits(l.nif) !== digits(company.nif)) out.push({ lv: "err", msg: `NIF não é o da ${company.name}` });
   if (l.sub === "Others travel expenses") {
     const s = suggestSub(l.client);
@@ -191,7 +191,7 @@ export function claimChecklist(
   const t = parseISO(ctx.today);
   const [py, pm] = c.period.split("-").map(Number);
   const periodPast = t.getFullYear() * 12 + t.getMonth() > py * 12 + pm - 1;
-  const open = periodPast || t.getDate() >= ctx.settings.open_day;
+  void periodPast;
   const veh = ctx.vehicle;
   const items: CheckItem[] = [
     { ok: !!(u && u.full_name && u.matricula && cc && company), label: "Cabeçalho completo: mês, ano, nome, matrícula, empresa e cost center", refs: u && !u.matricula ? ["Matrícula em falta no perfil"] : [], warn: [] },
@@ -205,7 +205,6 @@ export function claimChecklist(
     { ok: !has(/NIF/).length, label: "NIF da empresa em todos os recibos", refs: has(/NIF/), warn: has(/NIF/, "warn") },
     { ok: !c.trips.length || !!(veh && veh.model && plateOk(veh.plate)), label: "Viatura identificada para os quilómetros (matrícula XX-XX-XX)", refs: [], warn: [] },
     { ok: !c.trips.length || c.insurance_declared, label: "Declaração de seguro automóvel para quilómetros", refs: [], warn: [] },
-    { ok: open, label: open ? `Submissão aberta (a partir do dia ${ctx.settings.open_day})` : `Submissão abre a ${ctx.settings.open_day} de ${MONTHS_PT[pm - 1]}`, refs: [], warn: [] },
   ];
   return { items, ready: items.every((i) => i.ok), lineIssues: li, company };
 }
@@ -214,15 +213,15 @@ export const STATUS: Record<string, { label: string; tone: "info" | "warn" | "er
   draft: { label: "Rascunho", tone: "info" },
   returned: { label: "Devolvido", tone: "err" },
   submitted: { label: "Aguarda manager", tone: "warn" },
-  approved_mgr: { label: "Aguarda RH", tone: "warn" },
-  validated_rh: { label: "Aguarda contabilidade", tone: "warn" },
-  posted: { label: "Lançado", tone: "ok" },
+  approved_mgr: { label: "Aguarda registo RH", tone: "warn" },
+  validated_rh: { label: "Aguarda pagamento", tone: "warn" },
+  posted: { label: "Pago", tone: "ok" },
 };
 export const ROLES: Record<string, string> = {
   colaborador: "Colaborador",
   manager: "Manager",
   rh: "Recursos Humanos",
-  contabilidade: "Contabilidade",
+  contabilidade: "Administrativo (pagamentos)",
   admin: "Administrador",
 };
 

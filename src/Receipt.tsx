@@ -18,7 +18,7 @@ export function knownClient(claims: Claim[], r: LocalRead): string | null {
 }
 
 // Junta o resultado da leitura a um recibo (não apaga o que o colaborador já escreveu)
-export function applyRead(p: LineInput, r: LocalRead, claims: Claim[]): LineInput {
+export function applyRead(p: LineInput, r: LocalRead, claims: Claim[], companyNifs: string[] = []): LineInput {
   const n: LineInput = { ...p, details: { ...p.details }, ocr: r as Record<string, unknown> };
   if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) n.receipt_date = r.date;
   const kl = knownLine(claims, r);
@@ -26,7 +26,11 @@ export function applyRead(p: LineInput, r: LocalRead, claims: Claim[]): LineInpu
   if (name && (!p.client || !p.client.trim())) n.client = name;
   const legal = kl?.details?.legal ?? r.legal_name;
   if (legal && !n.details.legal) n.details.legal = legal;
-  if (r.nif_buyer) n.nif = r.nif_buyer;
+  // NIF da empresa: se aparecer em qualquer parte do texto lido, é esse (mais fiável do que adivinhar entre os NIFs do recibo)
+  const digitsText = (r.raw_text ?? "").replace(/\D/g, "");
+  const own = companyNifs.find((x) => x.replace(/\D/g, "").length === 9 && digitsText.includes(x.replace(/\D/g, "")));
+  if (own) n.nif = own;
+  else if (r.nif_buyer) n.nif = r.nif_buyer;
   if (typeof r.total_incl === "number") n.incl = r.total_incl;
   if (typeof r.total_excl === "number") n.excl = r.total_excl;
   else if (r.vat_breakdown === false && typeof r.total_incl === "number") n.excl = r.total_incl;
@@ -62,6 +66,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   const fileRef = useRef<HTMLInputElement>(null);
   const blobRef = useRef<Blob | null>(null);
   const [progress, setProgress] = useState("");
+  const rot = Number((f.ocr as { rotation?: number } | null)?.rotation ?? 0);
 
   useEffect(() => {
     let on = true;
@@ -117,13 +122,13 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
         date: !!(r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)),
         client: !!r.client,
         legal: !!r.legal_name,
-        nif: !!r.nif_buyer,
+        nif: !!r.nif_buyer || app.refs.companies.some((c) => (r.raw_text ?? "").replace(/\D/g, "").includes(c.nif.replace(/\D/g, ""))),
         incl: typeof r.total_incl === "number",
         excl: typeof r.total_excl === "number",
       };
       flags.client = !!knownClient(app.claims, r) || flags.client;
       setF((p) => {
-        const n = applyRead(p, r, app.claims);
+        const n = applyRead(p, r, app.claims, app.refs.companies.map((c) => c.nif));
         return n;
       });
       if (r.vat_breakdown === false) setNoVat(true);
@@ -147,6 +152,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   const schema = detailSchema(f.sub);
 
   async function save() {
+    if (errs) return app.toast("Preencha todos os campos obrigatórios antes de guardar.", "err");
     setBusy("save");
     try {
       await saveLine(claim.id, { ...f, id: line?.id, excl: noVat ? f.incl : f.excl });
@@ -164,22 +170,29 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   return (
     <Modal wide title={`${line ? "Editar" : "Novo"} recibo · nº ${f.no}`} onClose={onClose} footer={
       <>
-        <span className="muted push-left">{errs ? `${errs} erro(s): pode guardar, mas não submeter` : "Recibo conforme"}</span>
+        <span className={errs ? "push-left" : "muted push-left"} style={errs ? { color: "var(--danger)" } : undefined}>{errs ? `Faltam ${errs} campo(s) obrigatório(s) — ver a lista à esquerda` : "Recibo conforme"}</span>
         <button className="btn" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={!!busy} onClick={() => void save()}>{busy === "save" ? "A guardar…" : "Guardar recibo"}</button>
+        <button className="btn primary" disabled={!!busy || errs > 0} title={errs ? "Preencha todos os campos obrigatórios (procedimento RH)" : undefined} onClick={() => void save()}>{busy === "save" ? "A guardar…" : "Guardar recibo"}</button>
       </>
     }>
       <div className="rc-grid">
         <div>
           <div className={f.file_path ? "drop has" : "drop"} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void pick(e.dataTransfer.files[0]); }}>
             <span className="no">{f.no}</span>
-            {busy === "up" ? <span className="muted">A carregar…</span> : f.file_path ? (url ? <img src={url} alt="Recibo" /> : <span><b>PDF anexado</b><br /><span className="muted">Clique para substituir</span></span>) : <span><b>Fotografar ou carregar recibo</b><br /><span className="muted">Imagem ou PDF · arraste para aqui</span></span>}
+            {busy === "up" ? <span className="muted">A carregar…</span> : f.file_path ? (url ? <img src={url} alt="Recibo" style={rot ? { transform: `rotate(${rot}deg)` } : undefined} /> : <span><b>PDF anexado</b><br /><span className="muted">Clique para substituir</span></span>) : <span><b>Fotografar ou carregar recibo</b><br /><span className="muted">Imagem ou PDF · arraste para aqui</span></span>}
             <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => void pick(e.target.files?.[0])} />
           </div>
           <div className="ocr-bar">
             <button className="btn dark" disabled={!f.file_path || !!busy} onClick={() => void read()}>{busy === "ocr" ? progress || "A ler recibo…" : "Ler recibo novamente"}</button>
             <span className="muted">Lido automaticamente ao carregar: código QR das faturas portuguesas (dados exatos) ou texto do recibo. Tudo no seu computador; nada é enviado para serviços externos. Todos os campos podem ser corrigidos à mão.</span>
           </div>
+          {f.ocr && (
+            <details className="muted small" style={{ marginBottom: 8 }}>
+              <summary style={{ cursor: "pointer" }}>Texto lido do recibo</summary>
+              <div>Origem: {String((f.ocr as { source?: string }).source ?? "—")} · rotação {rot}° · versão 03-11-c</div>
+              <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, maxHeight: 180, overflow: "auto", background: "var(--black-04)", padding: 8, margin: "6px 0 0" }}>{String((f.ocr as { raw_text?: string }).raw_text ?? "(sem texto)")}</pre>
+            </details>
+          )}
           <div className="issues">{issues.length ? issues.map((i, k) => <div key={k} className={i.lv}>{i.msg}</div>) : <div className="ok">Sem alertas</div>}</div>
         </div>
         <div className="form">

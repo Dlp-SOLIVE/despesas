@@ -123,7 +123,6 @@ function Params() {
     <div className="params">
       <Field label="Taxa por km (€)"><input className="in num" type="number" step="0.01" defaultValue={s.km_rate} onBlur={(e) => save("km_rate", Number(e.target.value))} /></Field>
       <Field label="Antiguidade máxima dos recibos (meses)"><input className="in num" type="number" defaultValue={s.max_age_months} onBlur={(e) => save("max_age_months", Number(e.target.value))} /></Field>
-      <Field label="Dia de abertura da submissão"><input className="in num" type="number" min={1} max={28} defaultValue={s.open_day} onBlur={(e) => save("open_day", Number(e.target.value))} /></Field>
       <Field label="Máximo de recibos por formulário" hint="Limite do modelo Excel (linhas 11 a 34)"><div className="in ro">{s.max_lines}</div></Field>
       {app.refs.companies.map((c) => (
         <Field key={c.id} label={`NIF · ${c.name}`}><input className="in" defaultValue={c.nif} onBlur={(e) => e.target.value.trim() !== c.nif && void run(() => updateCompany(c.id, e.target.value.trim()), `Alterou NIF ${c.id}`, "NIF guardado.")} /></Field>

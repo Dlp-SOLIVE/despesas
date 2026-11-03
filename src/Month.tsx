@@ -25,7 +25,7 @@ export function MonthView() {
     return (
       <div className="app-body">
         <Empty title={`Ainda não tem pedido para ${periodLabel(period).toLowerCase()}`} action={<button className="btn primary" onClick={() => setNc(true)}>Iniciar pedido</button>}>
-          Registe os recibos ao longo do mês. A submissão abre a dia {s.open_day}.
+          Registe os recibos ao longo do mês e submeta quando estiver completo.
         </Empty>
         {nc && <NewClaimModal period={period} onClose={() => setNc(false)} />}
       </div>
@@ -56,7 +56,7 @@ export function MonthView() {
         let line: LineInput = { ...blankLine(++no), file_path: up.path, file_type: up.type };
         try {
           const r = await readReceiptLocally(file, up.type, () => undefined);
-          if (r.source !== "nenhum") line = applyRead(line, r, app.claims);
+          if (r.source !== "nenhum") line = applyRead(line, r, app.claims, app.refs.companies.map((c) => c.nif));
         } catch {
           // fica para preencher à mão
         }
@@ -106,7 +106,7 @@ export function MonthView() {
         </div>
       )}
       {!ed && (
-        <div className="notice"><span>Pedido fechado para edição. {claim.status === "posted" ? "Lançado pela contabilidade." : "Em aprovação."}</span><span className="push actions"><DownloadBtns claim={claim} /></span></div>
+        <div className="notice"><span>Pedido fechado para edição. {claim.status === "posted" ? `Pago${claim.paid_on ? ` a ${fmtDate(claim.paid_on)}` : ""}.` : "Em aprovação."}</span><span className="push actions"><DownloadBtns claim={claim} /></span></div>
       )}
       <Kpis t={t} />
       {claim.lines.length ? (

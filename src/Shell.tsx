@@ -122,7 +122,7 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
   const approver = ["manager", "rh", "contabilidade", "admin"].includes(me.role);
   const pend = ctx && approver ? queueFor(ctx).length : 0;
   const nav: [View, string][] = [
-    ...(approver ? [["aprov", me.role === "contabilidade" ? "A lançar" : "Aprovações"] as [View, string]] : []),
+    ...(approver ? [["aprov", me.role === "contabilidade" ? "Pagamentos" : "Aprovações"] as [View, string]] : []),
     ["mes", "O meu mês"],
     ...(me.uses_km ? [["km", "Quilómetros"] as [View, string]] : []),
     ["hist", "Histórico"],

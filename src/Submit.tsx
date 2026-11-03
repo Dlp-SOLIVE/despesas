@@ -58,7 +58,7 @@ export function SubmitModal({ claim, onClose }: { claim: Claim; onClose: () => v
           </div>
           <div className="actions" style={{ marginTop: 12 }}><DownloadBtns claim={claim} /></div>
           <p className="muted small">O Excel é preenchido sobre o modelo oficial ("To be printed", "Expense Claim Form" e "Détail IK"). As fórmulas e controlos da contabilidade não são alterados.</p>
-          <p className="muted small">Ao submeter, {mgr?.full_name ?? "o manager"} recebe o pedido em Aprovações. Depois seguem-se os RH e a contabilidade.</p>
+          <p className="muted small">Ao submeter, {mgr?.full_name ?? "o manager"} recebe o pedido em Aprovações. Os RH e o Administrativo têm conhecimento. Depois de aprovado, os RH registam e o Administrativo regista o pagamento.</p>
         </div>
       </div>
     </Modal>

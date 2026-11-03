@@ -192,8 +192,8 @@ export async function deleteFav(id: string) {
 export async function submitClaim(id: string) {
   check(await sb().rpc("exp_submit", { p_claim: id }));
 }
-export async function decideClaim(id: string, action: "approve" | "return", comment: string, notes: Record<string, string>, docusign: boolean) {
-  check(await sb().rpc("exp_decide", { p_claim: id, p_action: action, p_comment: comment, p_notes: notes, p_docusign: docusign }));
+export async function decideClaim(id: string, action: "approve" | "return", comment: string, notes: Record<string, string>, docusign: boolean, payment?: { paidOn: string; ref: string }) {
+  check(await sb().rpc("exp_decide", { p_claim: id, p_action: action, p_comment: comment, p_notes: notes, p_docusign: docusign, p_paid_on: payment?.paidOn ?? null, p_payment_ref: payment?.ref ?? null }));
 }
 export async function adminReopen(id: string, reason: string) {
   check(await sb().rpc("exp_admin_reopen", { p_claim: id, p_reason: reason }));
