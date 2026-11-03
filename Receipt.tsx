@@ -1,11 +1,43 @@
 import { useEffect, useRef, useState } from "react";
 import type { Claim, Currency, Details, ExpType, Line, Participant } from "../types";
 import { downloadReceipt, receiptURL, saveLine, uploadReceipt, type LineInput } from "../lib/data";
-import { pdfPreview, readReceiptLocally } from "../lib/localOcr";
+import { pdfPreview, readReceiptLocally, type LocalRead } from "../lib/localOcr";
 import { eur } from "../lib/format";
 import { TYPES, TYPE_KEYS, detailSchema, detailText, lineIssues, suggestSub } from "../lib/rules";
 import { Field, Modal, Seg, useApp } from "../ui";
 import { ruleCtx } from "./common";
+
+
+// Entidade já usada para este NIF emitente (recibos anteriores)
+export function knownClient(claims: Claim[], r: LocalRead): string | null {
+  if (!r.nif_issuer) return null;
+  return claims.flatMap((c) => c.lines).find((l) => (l.ocr as { nif_issuer?: string } | null)?.nif_issuer === r.nif_issuer && l.client?.trim())?.client ?? null;
+}
+
+// Junta o resultado da leitura a um recibo (não apaga o que o colaborador já escreveu)
+export function applyRead(p: LineInput, r: LocalRead, claims: Claim[]): LineInput {
+  const n: LineInput = { ...p, details: { ...p.details }, ocr: r as Record<string, unknown> };
+  if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) n.receipt_date = r.date;
+  const name = knownClient(claims, r) ?? r.client;
+  if (name && (!p.client || !p.client.trim())) n.client = name;
+  if (r.nif_buyer) n.nif = r.nif_buyer;
+  if (typeof r.total_incl === "number") n.incl = r.total_incl;
+  if (typeof r.total_excl === "number") n.excl = r.total_excl;
+  else if (r.vat_breakdown === false && typeof r.total_incl === "number") n.excl = r.total_incl;
+  if (r.currency === "GBP" || r.currency === "EUR") n.currency = r.currency as Currency;
+
+  const t = r.suggested_type as ExpType | null | undefined;
+  if (!p.type && t && TYPE_KEYS.includes(t)) n.type = t;
+  const ty = n.type;
+  if (!p.sub && ty && r.suggested_sub && TYPES[ty].subs.includes(r.suggested_sub)) n.sub = r.suggested_sub;
+  if (n.sub === "Others travel expenses" && r.others_kind && !n.details.kind) n.details.kind = r.others_kind;
+  if (n.sub === "Hotels" && r.city && !n.details.cidade) n.details.cidade = r.city;
+  if ((n.sub === "Flight ticket" || n.sub === "Train Ticket") && !n.details.origem && r.route_from) n.details.origem = r.route_from;
+  if ((n.sub === "Flight ticket" || n.sub === "Train Ticket") && !n.details.destino && r.route_to) n.details.destino = r.route_to;
+  return n;
+}
+
+export const blankLine = (no: number): LineInput => ({ no, receipt_date: null, type: null, sub: null, details: {}, client: "", nif: "", currency: "EUR", rate: 1, excl: null, incl: null, file_path: null, file_type: null, ocr: null });
 
 type OcrFlags = Partial<Record<"date" | "client" | "nif" | "excl" | "incl", boolean>>;
 
@@ -54,10 +86,9 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
       blobRef.current = file;
       setF((p) => ({ ...p, file_path: up.path, file_type: up.type }));
       setOcr({});
-      void read(file, up.type);
+      await read(file, up.type);
     } catch (e) {
       app.fail(e);
-    } finally {
       setBusy("");
     }
   }
@@ -83,25 +114,9 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
         incl: typeof r.total_incl === "number",
         excl: typeof r.total_excl === "number",
       };
+      flags.client = !!knownClient(app.claims, r) || flags.client;
       setF((p) => {
-        const n: LineInput = { ...p, details: { ...p.details }, ocr: r as Record<string, unknown> };
-        if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) n.receipt_date = r.date;
-        // Entidade: primeiro a que já foi usada para este NIF emitente (recibos anteriores), depois o texto lido
-        const known = r.nif_issuer ? app.claims.flatMap((c) => c.lines).find((l) => (l.ocr as { nif_issuer?: string } | null)?.nif_issuer === r.nif_issuer && l.client?.trim())?.client : null;
-        const name = known ?? r.client;
-        if (name && (!p.client || !p.client.trim())) n.client = name;
-        if (r.nif_buyer) n.nif = r.nif_buyer;
-        if (typeof r.total_incl === "number") n.incl = r.total_incl;
-        if (typeof r.total_excl === "number") n.excl = r.total_excl;
-        if (r.currency === "GBP" || r.currency === "EUR") n.currency = r.currency as Currency;
-        const t = r.suggested_type as ExpType | null | undefined;
-        if (!p.type && t && TYPE_KEYS.includes(t)) n.type = t;
-        const ty = n.type;
-        if (!p.sub && ty && r.suggested_sub && TYPES[ty].subs.includes(r.suggested_sub)) n.sub = r.suggested_sub;
-        if (n.sub === "Others travel expenses" && r.others_kind && !n.details.kind) n.details.kind = r.others_kind;
-        if (n.sub === "Hotels" && r.city && !n.details.cidade) n.details.cidade = r.city;
-        if ((n.sub === "Flight ticket" || n.sub === "Train Ticket") && !n.details.origem && r.route_from) n.details.origem = r.route_from;
-        if ((n.sub === "Flight ticket" || n.sub === "Train Ticket") && !n.details.destino && r.route_to) n.details.destino = r.route_to;
+        const n = applyRead(p, r, app.claims);
         return n;
       });
       if (r.vat_breakdown === false) setNoVat(true);
