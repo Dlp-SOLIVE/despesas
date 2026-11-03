@@ -4,7 +4,7 @@
 import jsQR from "jsqr";
 import type { OcrResult } from "./data";
 
-export type LocalRead = OcrResult & { source: "qr" | "texto" | "nenhum"; atcud?: string | null; nif_issuer?: string | null };
+export type LocalRead = OcrResult & { source: "qr" | "texto" | "nenhum"; atcud?: string | null; nif_issuer?: string | null; legal_name?: string | null; rotation?: number };
 
 type Progress = (msg: string) => void;
 
@@ -108,19 +108,71 @@ async function pdfText(pdf: any): Promise<string> {
 }
 
 // ── Tesseract ──
-async function ocrText(src: Blob | HTMLCanvasElement, progress: Progress): Promise<string> {
+function rotate(src: HTMLCanvasElement, deg: 90 | -90 | 180): HTMLCanvasElement {
+  const c = document.createElement("canvas");
+  const side = deg === 180;
+  c.width = side ? src.width : src.height;
+  c.height = side ? src.height : src.width;
+  const ctx = c.getContext("2d");
+  if (ctx) {
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate((deg * Math.PI) / 180);
+    ctx.drawImage(src, -src.width / 2, -src.height / 2);
+  }
+  return c;
+}
+// Lê o texto; se a página estiver deitada (digitalizações/fotos de lado), experimenta as rotações e fica com a mais legível
+async function ocrText(src: HTMLCanvasElement, progress: Progress): Promise<{ text: string; rotation: number }> {
   const { createWorker } = await import("tesseract.js");
   progress("A ler o texto do recibo…");
   const worker = await createWorker("por");
   try {
-    const r = await worker.recognize(src);
-    return r.data.text ?? "";
+    const tries: [number, HTMLCanvasElement][] = src.width > src.height * 1.1 ? [[-90, rotate(src, -90)], [90, rotate(src, 90)]] : [[0, src]];
+    let best = { text: "", rotation: 0, score: -1 };
+    for (const [rot, c] of tries) {
+      const r = await worker.recognize(c);
+      const text = r.data.text ?? "";
+      const score = (r.data.confidence ?? 0) + (/total/i.test(text) ? 20 : 0) + (/contribuinte|nif|nipc|iva/i.test(text) ? 10 : 0);
+      if (score > best.score) best = { text, rotation: rot, score };
+      if (score > 85) break;
+    }
+    if (best.score < 40 && tries.length === 1) {
+      // vertical mas ao contrário
+      const r = await worker.recognize(rotate(src, 180));
+      if ((r.data.confidence ?? 0) > best.score) best = { text: r.data.text ?? "", rotation: 180, score: r.data.confidence ?? 0 };
+    }
+    return { text: best.text, rotation: best.rotation };
   } finally {
     await worker.terminate();
   }
 }
 
 // ── Interpretação do texto ──
+// Rejeita lixo do OCR ("2rT gROOQ! 1 FA ISTI…"): palavras reais, poucas misturas de maiúsculas/dígitos/símbolos
+function looksLikeName(l: string): boolean {
+  const s = l.trim();
+  if (s.length < 3 || s.length > 60) return false;
+  const letters = (s.match(/[A-Za-zÀ-ÿ]/g) ?? []).length;
+  if (letters / s.length < 0.7) return false;
+  if (/[!?<>{}[\]|\\^~=_*#$%]/.test(s)) return false;
+  const words = s.split(/\s+/);
+  if (words.length > 6) return false;
+  const good = words.filter((w) => {
+    const c = w.replace(/[.,&'’-]/g, "");
+    if (!/^[A-Za-zÀ-ÿ]+$/.test(c)) return false;
+    if (c.length > 1 && !/[aeiouyàáâãéêíóôõúAEIOUYÀÁÂÃÉÊÍÓÔÕÚ]/.test(c)) return false;
+    // aceita TUDO MAIÚSCULAS, Capitalizado ou minúsculas — não mistura tipo "gROOQ"
+    return c === c.toUpperCase() || c === c.toLowerCase() || c === c[0].toUpperCase() + c.slice(1).toLowerCase();
+  }).length;
+  return good / words.length >= 0.75;
+}
+
+// Primeira página de um PDF como imagem (pré-visualização)
+export async function pdfPreview(blob: Blob): Promise<string> {
+  const pdf = await loadPdf(blob);
+  const c = await renderPdfPage(pdf, 1, 1);
+  return c.toDataURL("image/jpeg", 0.8);
+}
 const MONEY = /(\d{1,3}(?:[ .]\d{3})*[,.]\d{2})(?!\d)/g;
 const toNum = (s: string) => Number(s.replace(/[ .](?=\d{3}\b)/g, "").replace(",", "."));
 
@@ -148,8 +200,31 @@ export function parseText(text: string): Partial<LocalRead> {
   const nifs = [...t.matchAll(/\b([1235689]\d{2}) ?(\d{3}) ?(\d{3})\b/g)].map((m) => `${m[1]} ${m[2]} ${m[3]}`);
   if (nifs.length) out.nif_issuer = nifs[0];
   if (nifs.length > 1) out.nif_buyer = nifs[nifs.length - 1];
-  // nome: primeira linha "com letras" no topo do documento
-  const name = lines.slice(0, 6).find((l) => /[A-Za-zÀ-ÿ]{3,}/.test(l) && !/fatura|recibo|nif|contribuinte|original|duplicado|data|www|@/i.test(l));
+  // Denominação legal: linha com a forma jurídica (Lda, Unipessoal, S.A.…), juntando a linha anterior se o nome vier partido
+  const LEGAL = /\b(l\.?da|limitada|unipessoal|s\.\s?a\.?|sa|s\.?g\.?p\.?s|sociedade|crl)\.?\s*$/i;
+  const ADDR = /\d{4}-\d{3}|^(av|rua|r\.|largo|praça|pc|estrada|travessa|calçada)\b|nif|nipc|contribuinte|capital|matr[ií]cula|tel[ef.:]/i;
+  const top = lines.slice(0, 20);
+  let legalIdx = -1;
+  for (let i = 0; i < top.length; i++) {
+    if (LEGAL.test(top[i]) && !ADDR.test(top[i])) {
+      legalIdx = i;
+      let name = top[i];
+      // só junta a linha anterior se esta linha, sem a forma jurídica, tiver uma só palavra ("Nabeiro, Unipessoal Lda.")
+      let core = top[i];
+      for (let k = 0; k < 3; k++) core = core.replace(/[\s,]*(l\.?da|limitada|unipessoal|s\.\s?a|sa|s\.?g\.?p\.?s|sociedade|crl)\.?\s*$/i, "");
+      const partial = core.trim().split(/\s+/).filter(Boolean).length <= 1;
+      if (partial && i > 0 && !ADDR.test(top[i - 1]) && /^[A-Za-zÀ-ÿ]/.test(top[i - 1]) && !/[,.]\s*$/.test(top[i - 1]) && top[i - 1].length < 45) {
+        name = top[i - 1] + " " + top[i];
+        legalIdx = i - 1;
+      }
+      out.legal_name = name.replace(/\s*,\s*/g, ", ").replace(/\s{2,}/g, " ").trim().slice(0, 90);
+      break;
+    }
+  }
+  // Designação comercial: linha legível acima da morada/denominação legal (os logótipos nem sempre se leem)
+  const stop = top.findIndex((l) => ADDR.test(l));
+  const lim = [legalIdx, stop].filter((x) => x >= 0).reduce((a, b) => Math.min(a, b), 8);
+  const name = top.slice(0, lim).find((l) => looksLikeName(l) && /[A-ZÀ-Ý]/.test(l) && l.replace(/[^A-Za-zÀ-ÿ]/g, "").length >= 4 && !/fatura|recibo|original|duplicado|www|@/i.test(l));
   if (name) out.client = name.replace(/\s{2,}/g, " ").slice(0, 60);
   // categoria sugerida
   const has = (re: RegExp) => re.test(low);
@@ -171,6 +246,7 @@ export function parseText(text: string): Partial<LocalRead> {
 export async function readReceiptLocally(blob: Blob, type: string, progress: Progress): Promise<LocalRead> {
   let qr: LocalRead | null = null;
   let text = "";
+  let rotation = 0;
   progress("A procurar o código QR…");
   if (type === "application/pdf") {
     const pdf = await loadPdf(blob);
@@ -182,19 +258,23 @@ export async function readReceiptLocally(blob: Blob, type: string, progress: Pro
     }
     if (text.replace(/\s/g, "").length < 40) {
       // PDF digitalizado (só imagem): OCR da primeira página
-      text = await ocrText(await renderPdfPage(pdf, 1, 2), progress);
+      const o = await ocrText(await renderPdfPage(pdf, 1, 2), progress);
+      text = o.text;
+      rotation = o.rotation;
     }
   } else {
     const bmp = await createImageBitmap(blob);
     const raw = await qrFromBitmap(bmp, bmp.width, bmp.height);
     if (raw) qr = parseFiscalQR(raw);
-    text = await ocrText(drawScaled(bmp, bmp.width, bmp.height, 2000), progress);
+    const o = await ocrText(drawScaled(bmp, bmp.width, bmp.height, 2000), progress);
+    text = o.text;
+    rotation = o.rotation;
   }
   const fromText = parseText(text);
   if (qr) {
     // QR manda nos valores; o texto só acrescenta nome e categoria
-    return { ...qr, client: fromText.client ?? null, suggested_type: fromText.suggested_type ?? null, suggested_sub: fromText.suggested_sub ?? null, others_kind: fromText.others_kind ?? null };
+    return { ...qr, rotation, client: fromText.client ?? null, legal_name: fromText.legal_name ?? null, suggested_type: fromText.suggested_type ?? null, suggested_sub: fromText.suggested_sub ?? null, others_kind: fromText.others_kind ?? null };
   }
   const anything = fromText.date || fromText.total_incl || fromText.client;
-  return { source: anything ? "texto" : "nenhum", currency: "EUR", vat_breakdown: null, total_excl: null, ...fromText };
+  return { source: anything ? "texto" : "nenhum", rotation, currency: "EUR", vat_breakdown: null, total_excl: null, ...fromText };
 }

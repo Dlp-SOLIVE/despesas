@@ -9,17 +9,23 @@ import { ruleCtx } from "./common";
 
 
 // Entidade já usada para este NIF emitente (recibos anteriores)
-export function knownClient(claims: Claim[], r: LocalRead): string | null {
+function knownLine(claims: Claim[], r: LocalRead) {
   if (!r.nif_issuer) return null;
-  return claims.flatMap((c) => c.lines).find((l) => (l.ocr as { nif_issuer?: string } | null)?.nif_issuer === r.nif_issuer && l.client?.trim())?.client ?? null;
+  return claims.flatMap((c) => c.lines).find((l) => (l.ocr as { nif_issuer?: string } | null)?.nif_issuer === r.nif_issuer && l.client?.trim()) ?? null;
+}
+export function knownClient(claims: Claim[], r: LocalRead): string | null {
+  return knownLine(claims, r)?.client ?? null;
 }
 
 // Junta o resultado da leitura a um recibo (não apaga o que o colaborador já escreveu)
 export function applyRead(p: LineInput, r: LocalRead, claims: Claim[]): LineInput {
   const n: LineInput = { ...p, details: { ...p.details }, ocr: r as Record<string, unknown> };
   if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) n.receipt_date = r.date;
-  const name = knownClient(claims, r) ?? r.client;
+  const kl = knownLine(claims, r);
+  const name = kl?.client ?? r.client ?? r.legal_name;
   if (name && (!p.client || !p.client.trim())) n.client = name;
+  const legal = kl?.details?.legal ?? r.legal_name;
+  if (legal && !n.details.legal) n.details.legal = legal;
   if (r.nif_buyer) n.nif = r.nif_buyer;
   if (typeof r.total_incl === "number") n.incl = r.total_incl;
   if (typeof r.total_excl === "number") n.excl = r.total_excl;
@@ -39,7 +45,7 @@ export function applyRead(p: LineInput, r: LocalRead, claims: Claim[]): LineInpu
 
 export const blankLine = (no: number): LineInput => ({ no, receipt_date: null, type: null, sub: null, details: {}, client: "", nif: "", currency: "EUR", rate: 1, excl: null, incl: null, file_path: null, file_type: null, ocr: null });
 
-type OcrFlags = Partial<Record<"date" | "client" | "nif" | "excl" | "incl", boolean>>;
+type OcrFlags = Partial<Record<"date" | "client" | "legal" | "nif" | "excl" | "incl", boolean>>;
 
 export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Line | null; onClose: () => void }) {
   const app = useApp();
@@ -56,6 +62,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   const fileRef = useRef<HTMLInputElement>(null);
   const blobRef = useRef<Blob | null>(null);
   const [progress, setProgress] = useState("");
+  const rot = Number((f.ocr as { rotation?: number } | null)?.rotation ?? 0);
 
   useEffect(() => {
     let on = true;
@@ -110,6 +117,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
       const flags: OcrFlags = {
         date: !!(r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)),
         client: !!r.client,
+        legal: !!r.legal_name,
         nif: !!r.nif_buyer,
         incl: typeof r.total_incl === "number",
         excl: typeof r.total_excl === "number",
@@ -166,7 +174,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
         <div>
           <div className={f.file_path ? "drop has" : "drop"} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void pick(e.dataTransfer.files[0]); }}>
             <span className="no">{f.no}</span>
-            {busy === "up" ? <span className="muted">A carregar…</span> : f.file_path ? (url ? <img src={url} alt="Recibo" /> : <span><b>PDF anexado</b><br /><span className="muted">Clique para substituir</span></span>) : <span><b>Fotografar ou carregar recibo</b><br /><span className="muted">Imagem ou PDF · arraste para aqui</span></span>}
+            {busy === "up" ? <span className="muted">A carregar…</span> : f.file_path ? (url ? <img src={url} alt="Recibo" style={rot ? { transform: `rotate(${rot}deg)` } : undefined} /> : <span><b>PDF anexado</b><br /><span className="muted">Clique para substituir</span></span>) : <span><b>Fotografar ou carregar recibo</b><br /><span className="muted">Imagem ou PDF · arraste para aqui</span></span>}
             <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => void pick(e.target.files?.[0])} />
           </div>
           <div className="ocr-bar">
@@ -180,7 +188,8 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
             <Field label="Data do recibo" ocr={ocr.date} hint="A data que aparece no recibo"><input className="in" type="date" max={app.today} value={f.receipt_date ?? ""} onChange={(e) => set("receipt_date", e.target.value || null)} /></Field>
             <Field label="NIF no recibo" ocr={ocr.nif} hint={rc.company ? `Deve ser ${rc.company.nif}` : undefined}><input className="in" value={f.nif ?? ""} placeholder="NIF do adquirente" onChange={(e) => set("nif", e.target.value)} /></Field>
           </div>
-          <Field label="Entidade (client)" ocr={ocr.client} hint="Restaurante, hotel, companhia aérea…"><input className="in" value={f.client ?? ""} onChange={(e) => set("client", e.target.value)} /></Field>
+          <Field label="Designação comercial (client)" ocr={ocr.client} hint="Nome do restaurante, hotel, loja…"><input className="in" value={f.client ?? ""} onChange={(e) => set("client", e.target.value)} /></Field>
+          <Field label="Denominação legal" ocr={ocr.legal} hint="Empresa que emite a fatura (Lda, S.A.…)"><input className="in" value={f.details.legal ?? ""} onChange={(e) => setD("legal", e.target.value)} /></Field>
           <div className="row3">
             <Field label="Com IVA" ocr={ocr.incl}><input className="in num" type="number" step="0.01" min="0" value={f.incl ?? ""} onChange={(e) => set("incl", numOrNull(e.target.value))} /></Field>
             <Field label="Sem IVA" ocr={ocr.excl} hint={noVat ? "IVA = 0" : Number(f.excl) ? `IVA ${eur(vat)} · ${rate.toFixed(0)} %` : undefined}><input className="in num" type="number" step="0.01" min="0" disabled={noVat} value={(noVat ? f.incl : f.excl) ?? ""} onChange={(e) => set("excl", numOrNull(e.target.value))} /></Field>
