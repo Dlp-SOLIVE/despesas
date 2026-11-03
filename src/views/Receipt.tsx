@@ -62,6 +62,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   const fileRef = useRef<HTMLInputElement>(null);
   const blobRef = useRef<Blob | null>(null);
   const [progress, setProgress] = useState("");
+  const rot = Number((f.ocr as { rotation?: number } | null)?.rotation ?? 0);
 
   useEffect(() => {
     let on = true;
@@ -173,7 +174,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
         <div>
           <div className={f.file_path ? "drop has" : "drop"} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void pick(e.dataTransfer.files[0]); }}>
             <span className="no">{f.no}</span>
-            {busy === "up" ? <span className="muted">A carregar…</span> : f.file_path ? (url ? <img src={url} alt="Recibo" /> : <span><b>PDF anexado</b><br /><span className="muted">Clique para substituir</span></span>) : <span><b>Fotografar ou carregar recibo</b><br /><span className="muted">Imagem ou PDF · arraste para aqui</span></span>}
+            {busy === "up" ? <span className="muted">A carregar…</span> : f.file_path ? (url ? <img src={url} alt="Recibo" style={rot ? { transform: `rotate(${rot}deg)` } : undefined} /> : <span><b>PDF anexado</b><br /><span className="muted">Clique para substituir</span></span>) : <span><b>Fotografar ou carregar recibo</b><br /><span className="muted">Imagem ou PDF · arraste para aqui</span></span>}
             <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => void pick(e.target.files?.[0])} />
           </div>
           <div className="ocr-bar">
