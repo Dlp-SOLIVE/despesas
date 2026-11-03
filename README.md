@@ -4,7 +4,7 @@ Plataforma de pedidos de reembolso de despesas e mapa de quilómetros da Legendr
 Gera o **Excel oficial** ("To be printed", "Expense Claim Form", "Détail IK") e o **PDF único** com os recibos numerados, tal como a contabilidade exige.
 
 - Repositório: `Dlp-SOLIVE/despesas` (ramo `main` → deploy automático no Netlify)
-- Supabase: projeto `rfdsxigfodzayoxebbga`. Tabelas com prefixo `exp_`. Se for o mesmo projeto do Sistema de Compras, o login e a tabela `staff_members` são partilhados; se for um projeto novo, o script cria a `staff_members` com a mesma estrutura.
+- Supabase: projeto próprio `Legendre-Expenses` (`rfdsxigfodzayoxebbga`), separado do Sistema de Compras. Tabelas com prefixo `exp_`.
 
 ## Tecnologia
 Vite + React + TypeScript (`tsc -b && vite build`), Supabase (Auth, Postgres com RLS, Storage, Edge Function), ExcelJS e pdf-lib (carregados só ao exportar).
@@ -17,7 +17,7 @@ O estado só muda pelas funções `exp_submit`, `exp_decide`, `exp_admin_reopen`
 
 ### 1. Base de dados
 Supabase → **SQL Editor** → New query → colar todo o ficheiro `supabase/migrations/20261102120000_despesas_schema.sql` → **Run**.
-Pode voltar a correr o script sem problema (não duplica nada). Não altera nenhuma tabela das Compras.
+Pode voltar a correr o script sem problema (não duplica nada).
 
 ### 2. Leitura automática dos recibos
 Gratuita e sem configuração: corre no browser do colaborador (nada é enviado para serviços externos).
@@ -49,14 +49,14 @@ Carregar todos os ficheiros desta pasta para `Dlp-SOLIVE/despesas` (Add file →
 
 ### 4. Netlify
 Add new site → Import from GitHub → `Dlp-SOLIVE/despesas`. Build: `npm run build`, pasta `dist` (já definidos em `netlify.toml`).
-Site configuration → **Environment variables**: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (os mesmos valores do site das Compras). **Nunca** a service role key.
+Site configuration → **Environment variables**: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (Supabase → Project Settings → API). **Nunca** a service role key.
 Depois: Deploys → Trigger deploy → confirmar **Published**.
 
 ### 5. Supabase Auth
 Authentication → URL Configuration → **Redirect URLs**: acrescentar o endereço Netlify das Despesas (para a recuperação de palavra-passe).
 
 ### 6. Primeiro administrador
-Entrar no site com a sua conta das Compras (ou criar conta) e pedir acesso. No SQL Editor:
+Criar conta no site e pedir acesso. No SQL Editor:
 ```sql
 insert into public.exp_profiles(staff_member_id, role, active, company_id)
 select id, 'admin', true, 'LEGDR' from public.staff_members where lower(email) = lower('o.seu.email@legendre.pt')
@@ -65,7 +65,6 @@ on conflict (staff_member_id) do update set role = 'admin', active = true;
 A partir daí, em **Administração**: criar cost centers, aprovar utilizadores e atribuir perfil (Colaborador, Manager, RH, Contabilidade) e manager.
 
 ## Acessos
-- Contas novas criadas nas Despesas ficam em `staff_members` como `viewer` inativo: **não** ganham acesso ao Sistema de Compras.
 - Cada colaborador vê os seus pedidos; o manager vê os da equipa; RH, contabilidade e administrador veem todos.
 - Recibos no bucket privado `despesas-recibos` (`<colaborador>/<pedido>/<ficheiro>`), acessíveis só a quem vê o pedido.
 - Pedidos lançados só podem ser reabertos ou apagados pelo administrador, com motivo registado no audit log. Conservação legal: 10 anos.
