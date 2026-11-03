@@ -9,7 +9,7 @@ function check<T>(res: { data: T | null; error: { message: string } | null }): T
   return res.data as T;
 }
 
-const DEFAULT_SETTINGS: Settings = { km_rate: 0.4, max_age_months: 3, open_day: 20, max_lines: 24, retention_years: 10, docusign_enabled: false };
+const DEFAULT_SETTINGS: Settings = { km_rate: 0.4, max_age_months: 3, open_day: 20, max_lines: 24, retention_years: 10 };
 
 export async function loadMe(email: string): Promise<Person | null> {
   const res = await sb().from("exp_people").select("*").ilike("email", email).maybeSingle();
@@ -33,19 +33,19 @@ export async function loadRefs(): Promise<Refs> {
     companies: (check(co) as Company[]) ?? [],
     costCenters: (check(cc) as CostCenter[]) ?? [],
     settings: s
-      ? { km_rate: Number(s.km_rate), max_age_months: Number(s.max_age_months), open_day: Number(s.open_day), max_lines: Number(s.max_lines), retention_years: Number(s.retention_years), docusign_enabled: !!s.docusign_enabled }
+      ? { km_rate: Number(s.km_rate), max_age_months: Number(s.max_age_months), open_day: Number(s.open_day), max_lines: Number(s.max_lines), retention_years: Number(s.retention_years) }
       : DEFAULT_SETTINGS,
     people: (check(pp) as Person[]) ?? [],
   };
 }
 
-type ClaimRow = Omit<Claim, "lines" | "trips" | "history" | "signatures"> & { lines: Line[] | null; trips: Trip[] | null; history: Claim["history"] | null; signatures: Claim["signatures"] | null };
+type ClaimRow = Omit<Claim, "lines" | "trips" | "history"> & { lines: Line[] | null; trips: Trip[] | null; history: Claim["history"] | null };
 
 export async function loadClaims(): Promise<Claim[]> {
   const rows = check(
     await sb()
       .from("exp_claims")
-      .select("*, lines:exp_lines(*), trips:exp_trips(*), history:exp_history(*), signatures:exp_signatures(*)")
+      .select("*, lines:exp_lines(*), trips:exp_trips(*), history:exp_history(*)")
       .order("period", { ascending: false }),
   ) as ClaimRow[];
   return (rows ?? []).map((r) => ({
@@ -53,7 +53,6 @@ export async function loadClaims(): Promise<Claim[]> {
     lines: (r.lines ?? []).map((l) => ({ ...l, details: l.details ?? {}, excl: l.excl === null ? null : Number(l.excl), incl: l.incl === null ? null : Number(l.incl), rate: Number(l.rate) })).sort((a, b) => a.no - b.no),
     trips: (r.trips ?? []).map((t) => ({ ...t, km: Number(t.km) })),
     history: (r.history ?? []).sort((a, b) => a.at.localeCompare(b.at)),
-    signatures: r.signatures ?? [],
   }));
 }
 
@@ -149,20 +148,6 @@ export async function runOcr(path: string): Promise<OcrResult> {
   return body.data;
 }
 
-async function invokeDocusign(body: Record<string, unknown>) {
-  const res = await sb().functions.invoke("exp-docusign", { body });
-  if (res.error) throw new Error(res.error.message);
-  const out = res.data as { ok: boolean; error?: string; url?: string; envelope_id?: string };
-  if (!out.ok) throw new Error(out.error ?? "Erro DocuSign");
-  return out;
-}
-export async function docusignStart(claimId: string, pdfBase64: string, returnUrl: string): Promise<{ url: string; envelopeId: string }> {
-  const out = await invokeDocusign({ action: "start", claim_id: claimId, pdf_base64: pdfBase64, return_url: returnUrl });
-  return { url: out.url ?? "", envelopeId: out.envelope_id ?? "" };
-}
-export async function docusignFinish(claimId: string, envelopeId: string, comment: string) {
-  await invokeDocusign({ action: "finish", claim_id: claimId, envelope_id: envelopeId, comment });
-}
 
 export async function addTrip(claimId: string, t: Omit<Trip, "id" | "claim_id">) {
   check(await sb().from("exp_trips").insert({ claim_id: claimId, ...t }));
@@ -192,8 +177,8 @@ export async function deleteFav(id: string) {
 export async function submitClaim(id: string) {
   check(await sb().rpc("exp_submit", { p_claim: id }));
 }
-export async function decideClaim(id: string, action: "approve" | "return", comment: string, notes: Record<string, string>, docusign: boolean, payment?: { paidOn: string; ref: string }) {
-  check(await sb().rpc("exp_decide", { p_claim: id, p_action: action, p_comment: comment, p_notes: notes, p_docusign: docusign, p_paid_on: payment?.paidOn ?? null, p_payment_ref: payment?.ref ?? null }));
+export async function decideClaim(id: string, action: "approve" | "return", comment: string, notes: Record<string, string>, payment?: { paidOn: string; ref: string }) {
+  check(await sb().rpc("exp_decide", { p_claim: id, p_action: action, p_comment: comment, p_notes: notes, p_paid_on: payment?.paidOn ?? null, p_payment_ref: payment?.ref ?? null }));
 }
 export async function adminReopen(id: string, reason: string) {
   check(await sb().rpc("exp_admin_reopen", { p_claim: id, p_reason: reason }));
@@ -213,7 +198,7 @@ export async function upsertCostCenter(cc: CostCenter, isNew: boolean) {
   if (isNew) check(await sb().from("exp_cost_centers").insert(cc));
   else check(await sb().from("exp_cost_centers").update({ label: cc.label, company_id: cc.company_id, owner_id: cc.owner_id, active: cc.active }).eq("code", cc.code));
 }
-export async function updateProfile(staffId: string, patch: Partial<Pick<Person, "role" | "manager_id" | "company_id" | "matricula" | "active" | "docusign" | "uses_km">>) {
+export async function updateProfile(staffId: string, patch: Partial<Pick<Person, "role" | "manager_id" | "company_id" | "matricula" | "active" | "uses_km">>) {
   check(await sb().from("exp_profiles").update(patch).eq("staff_member_id", staffId));
 }
 export async function updateSettings(patch: Partial<Settings>) {
