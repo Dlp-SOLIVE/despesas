@@ -48,7 +48,9 @@ export function queueFor(app: AppCtx): Claim[] {
 export function ApprovalsView() {
   const app = useApp();
   const q = queueFor(app);
-  const done = app.claims.filter((c) => !q.includes(c) && c.history.some((h) => h.actor_id === app.me.id && ["Aprovado", "Validado", "Lançado", "Devolvido"].includes(h.action)));
+  // RH e Administrativo acompanham os pedidos desde a submissão
+  const aware = ["rh", "contabilidade", "admin"].includes(app.me.role) ? app.claims.filter((c) => c.status === "submitted" && !q.includes(c)) : [];
+  const done = app.claims.filter((c) => !q.includes(c) && c.history.some((h) => h.actor_id === app.me.id && ["Aprovado", "Validado", "Registado RH", "Lançado", "Pago", "Devolvido"].includes(h.action)));
   const row = (c: Claim) => {
     const u = app.refs.people.find((p) => p.id === c.staff_member_id);
     const t = claimTotals(c, app.refs.settings);
@@ -66,8 +68,9 @@ export function ApprovalsView() {
   const head = <thead><tr><th>Colaborador</th><th>Mês</th><th>Cost center</th><th className="num">Recibos</th><th className="num">Total</th><th>Conformidade</th><th>Estado</th></tr></thead>;
   return (
     <div className="app-body">
-      <PageHead eyebrow={ROLES[app.me.role]} title={app.me.role === "contabilidade" ? "A lançar" : "Aprovações"} />
+      <PageHead eyebrow={ROLES[app.me.role]} title={app.me.role === "contabilidade" ? "Pagamentos" : "Aprovações"} />
       {q.length ? <div className="tbl-wrap"><table>{head}<tbody>{q.map(row)}</tbody></table></div> : <Empty title="Nada pendente">Os pedidos que precisam da sua ação aparecem aqui.</Empty>}
+      {aware.length > 0 && <><div className="eyebrow" style={{ margin: "32px 0 8px" }}>Para conhecimento · em aprovação pelo manager</div><div className="tbl-wrap"><table>{head}<tbody>{aware.map(row)}</tbody></table></div></>}
       {done.length > 0 && <><div className="eyebrow" style={{ margin: "32px 0 8px" }}>Tratados por si</div><div className="tbl-wrap"><table>{head}<tbody>{done.map(row)}</tbody></table></div></>}
     </div>
   );
@@ -89,24 +92,27 @@ export function ReviewView() {
   const act = canDecide(app, claim);
   const posting = claim.status === "validated_rh";
   const flagged = Object.keys(notes);
-  const verb = claim.status === "submitted" ? "Aprovar" : claim.status === "approved_mgr" ? "Validar" : "Marcar como lançado";
+  const verb = claim.status === "submitted" ? "Aprovar" : claim.status === "approved_mgr" ? "Registar (RH)" : "Registar pagamento";
+  const [paidOn, setPaidOn] = useState(app.today);
+  const [payRef, setPayRef] = useState("");
   const veh = vehicleFor(app, claim);
 
   async function decide(action: "approve" | "return") {
     if (!claim) return;
-    if (action === "approve" && !(await askConfirm(`${verb} o pedido de ${u?.full_name ?? ""} (${periodLabel(claim.period)}, ${eur(t.total)})?`))) return;
+    if (action === "approve" && posting && !paidOn) return app.toast("Indique a data do pagamento.", "err");
+    if (action === "approve" && !(await askConfirm(`${verb} · pedido de ${u?.full_name ?? ""} (${periodLabel(claim.period)}, ${eur(t.total)})?`))) return;
     setBusy(true);
     try {
       if (action === "approve" && ds && dsAvailable && !posting) {
         // Assinatura real: envelope DocuSign com a folha de aprovação + recibos; volta à plataforma no fim
-        const stepLabel = claim.status === "submitted" ? "Aprovação do manager" : "Validação RH";
+        const stepLabel = claim.status === "submitted" ? "Aprovação do manager" : "Registo RH";
         const b64 = await buildSigningPDF(claim, app.refs, app.me, stepLabel);
         const { url, envelopeId } = await docusignStart(claim.id, b64, `${window.location.origin}/?ds=1`);
         window.sessionStorage.setItem("despesas_ds", JSON.stringify({ claim: claim.id, envelope: envelopeId, comment: comment.trim() }));
         window.location.href = url;
         return;
       }
-      await decideClaim(claim.id, action, comment.trim(), Object.fromEntries(Object.entries(notes).filter(([, v]) => v.trim())), false);
+      await decideClaim(claim.id, action, comment.trim(), Object.fromEntries(Object.entries(notes).filter(([, v]) => v.trim())), false, posting ? { paidOn, ref: payRef.trim() } : undefined);
       await app.reload();
       app.toast(action === "return" ? `Pedido devolvido a ${u?.full_name ?? ""}.` : `Pedido de ${u?.full_name ?? ""}: ${verb.toLowerCase()} ✓`);
       app.go("aprov", null);
@@ -161,8 +167,14 @@ export function ReviewView() {
       <SignedDocs claim={claim} />
       {act && (
         <div className="decide">
-          <Field label={posting ? "Nota (opcional)" : "Comentário"} hint={posting ? "Depois de lançado, só o administrador pode reabrir." : flagged.length ? `${flagged.length} linha(s) assinalada(s)` : "Obrigatório para devolver"}>
-            <textarea className="in" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={posting ? "ex.: lançado no lote de novembro" : "ex.: falta a lista de participantes no jantar de dia 5"} />
+          {posting && (
+            <div className="row2">
+              <Field label="Data do pagamento"><input className="in" type="date" max={app.today} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></Field>
+              <Field label="Referência (opcional)" hint="ex.: transferência, lote de pagamentos"><input className="in" value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="Transferência 12/11" /></Field>
+            </div>
+          )}
+          <Field label={posting ? "Nota (opcional)" : "Comentário"} hint={posting ? "Depois de registado o pagamento, só o administrador pode reabrir." : flagged.length ? `${flagged.length} linha(s) assinalada(s)` : "Obrigatório para devolver"}>
+            <textarea className="in" rows={2} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={posting ? "ex.: pago no lote de novembro" : "ex.: falta a lista de participantes no jantar de dia 5"} />
           </Field>
           <div className="decide-row">
             {!posting && dsAvailable && <label className="cb"><input type="checkbox" checked={ds} onChange={(e) => setDs(e.target.checked)} /> Assinar com DocuSign <span className="muted">(abre a DocuSign e volta aqui)</span></label>}

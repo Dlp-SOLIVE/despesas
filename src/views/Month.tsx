@@ -106,7 +106,7 @@ export function MonthView() {
         </div>
       )}
       {!ed && (
-        <div className="notice"><span>Pedido fechado para edição. {claim.status === "posted" ? "Lançado pela contabilidade." : "Em aprovação."}</span><span className="push actions"><DownloadBtns claim={claim} /></span></div>
+        <div className="notice"><span>Pedido fechado para edição. {claim.status === "posted" ? `Pago${claim.paid_on ? ` a ${fmtDate(claim.paid_on)}` : ""}.` : "Em aprovação."}</span><span className="push actions"><DownloadBtns claim={claim} /></span></div>
       )}
       <Kpis t={t} />
       {claim.lines.length ? (
