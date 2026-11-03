@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Claim, FavTrip, Person, Refs, Vehicle } from "./types";
-import { audit, loadClaims, loadFavs, loadRefs, loadVehicle } from "./lib/data";
+import { audit, docusignFinish, loadClaims, loadFavs, loadRefs, loadVehicle } from "./lib/data";
 import { isoToday, initials } from "./lib/format";
 import { ROLES } from "./lib/rules";
 import { AppContext, DialogHost, type AppCtx, type View } from "./ui";
@@ -29,6 +29,16 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
     }
     return { view: ["rh", "contabilidade"].includes(initialMe.role) ? "aprov" : initialMe.role === "admin" ? "admin" : "mes", selId: null };
   });
+  // Botão "voltar" do browser: cada mudança de ecrã fica no histórico
+  useEffect(() => {
+    window.history.replaceState({ despesas: ui }, "");
+    const onPop = (e: PopStateEvent) => {
+      const st = (e.state as { despesas?: { view: View; selId: string | null } } | null)?.despesas;
+      if (st) setUi(st);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   useEffect(() => {
     try {
       window.sessionStorage.setItem(UI_KEY, JSON.stringify(ui));
@@ -53,6 +63,30 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
     void reload();
   }, [reload]);
 
+  // Regresso da DocuSign: ?ds=1&event=signing_complete
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (!q.get("ds")) return;
+    const event = q.get("event");
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+    const raw = window.sessionStorage.getItem("despesas_ds");
+    window.sessionStorage.removeItem("despesas_ds");
+    if (!raw) return;
+    const pend = JSON.parse(raw) as { claim: string; envelope: string; comment: string };
+    if (event !== "signing_complete") {
+      toast(event === "decline" ? "Assinatura recusada na DocuSign. O pedido não foi aprovado." : "Assinatura não concluída. O pedido continua por aprovar.", "err");
+      return;
+    }
+    toast("A confirmar a assinatura DocuSign…");
+    docusignFinish(pend.claim, pend.envelope, pend.comment)
+      .then(async () => {
+        await reload();
+        toast("Assinado na DocuSign e aprovado.");
+        setUi({ view: "aprov", selId: null });
+      })
+      .catch((e: unknown) => toast(e instanceof Error ? e.message : String(e), "err"));
+  }, []);
+
   const toast = useCallback((text: string, kind: "ok" | "err" = "ok") => {
     const id = Date.now() + Math.random();
     setToasts((t) => [...t, { id, text, kind }]);
@@ -74,7 +108,9 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
       toast,
       fail: (e: unknown) => toast(e instanceof Error ? e.message : String(e), "err"),
       go: (view: View, claimId?: string | null) => {
-        setUi((u) => ({ view, selId: claimId === undefined ? u.selId : claimId }));
+        const next = { view, selId: claimId === undefined ? ui.selId : claimId };
+        if (next.view !== ui.view || next.selId !== ui.selId) window.history.pushState({ despesas: next }, "");
+        setUi(next);
         window.scrollTo(0, 0);
       },
       log: (action: string) => {
@@ -98,8 +134,10 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
   return (
     <div className="app">
       <header className="appbar">
-        <img src={logo} alt="LEGENDRE" />
-        <span className="prod">Despesas</span>
+        <button type="button" className="home" onClick={() => ctx?.go(approver && me.role !== "manager" ? "aprov" : "mes", null)} aria-label="Início">
+          <img src={logo} alt="LEGENDRE" />
+          <span className="prod">Despesas</span>
+        </button>
         <nav>
           {nav.map(([k, l]) => (
             <button key={k} className={active === k ? "on" : ""} onClick={() => ctx?.go(k, k === "mes" || k === "km" ? null : undefined)}>
