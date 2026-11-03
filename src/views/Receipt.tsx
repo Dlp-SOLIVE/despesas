@@ -1,13 +1,51 @@
 import { useEffect, useRef, useState } from "react";
 import type { Claim, Currency, Details, ExpType, Line, Participant } from "../types";
 import { downloadReceipt, receiptURL, saveLine, uploadReceipt, type LineInput } from "../lib/data";
-import { readReceiptLocally } from "../lib/localOcr";
+import { pdfPreview, readReceiptLocally, type LocalRead } from "../lib/localOcr";
 import { eur } from "../lib/format";
 import { TYPES, TYPE_KEYS, detailSchema, detailText, lineIssues, suggestSub } from "../lib/rules";
 import { Field, Modal, Seg, useApp } from "../ui";
 import { ruleCtx } from "./common";
 
-type OcrFlags = Partial<Record<"date" | "client" | "nif" | "excl" | "incl", boolean>>;
+
+// Entidade já usada para este NIF emitente (recibos anteriores)
+function knownLine(claims: Claim[], r: LocalRead) {
+  if (!r.nif_issuer) return null;
+  return claims.flatMap((c) => c.lines).find((l) => (l.ocr as { nif_issuer?: string } | null)?.nif_issuer === r.nif_issuer && l.client?.trim()) ?? null;
+}
+export function knownClient(claims: Claim[], r: LocalRead): string | null {
+  return knownLine(claims, r)?.client ?? null;
+}
+
+// Junta o resultado da leitura a um recibo (não apaga o que o colaborador já escreveu)
+export function applyRead(p: LineInput, r: LocalRead, claims: Claim[]): LineInput {
+  const n: LineInput = { ...p, details: { ...p.details }, ocr: r as Record<string, unknown> };
+  if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) n.receipt_date = r.date;
+  const kl = knownLine(claims, r);
+  const name = kl?.client ?? r.client ?? r.legal_name;
+  if (name && (!p.client || !p.client.trim())) n.client = name;
+  const legal = kl?.details?.legal ?? r.legal_name;
+  if (legal && !n.details.legal) n.details.legal = legal;
+  if (r.nif_buyer) n.nif = r.nif_buyer;
+  if (typeof r.total_incl === "number") n.incl = r.total_incl;
+  if (typeof r.total_excl === "number") n.excl = r.total_excl;
+  else if (r.vat_breakdown === false && typeof r.total_incl === "number") n.excl = r.total_incl;
+  if (r.currency === "GBP" || r.currency === "EUR") n.currency = r.currency as Currency;
+
+  const t = r.suggested_type as ExpType | null | undefined;
+  if (!p.type && t && TYPE_KEYS.includes(t)) n.type = t;
+  const ty = n.type;
+  if (!p.sub && ty && r.suggested_sub && TYPES[ty].subs.includes(r.suggested_sub)) n.sub = r.suggested_sub;
+  if (n.sub === "Others travel expenses" && r.others_kind && !n.details.kind) n.details.kind = r.others_kind;
+  if (n.sub === "Hotels" && r.city && !n.details.cidade) n.details.cidade = r.city;
+  if ((n.sub === "Flight ticket" || n.sub === "Train Ticket") && !n.details.origem && r.route_from) n.details.origem = r.route_from;
+  if ((n.sub === "Flight ticket" || n.sub === "Train Ticket") && !n.details.destino && r.route_to) n.details.destino = r.route_to;
+  return n;
+}
+
+export const blankLine = (no: number): LineInput => ({ no, receipt_date: null, type: null, sub: null, details: {}, client: "", nif: "", currency: "EUR", rate: 1, excl: null, incl: null, file_path: null, file_type: null, ocr: null });
+
+type OcrFlags = Partial<Record<"date" | "client" | "legal" | "nif" | "excl" | "incl", boolean>>;
 
 export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Line | null; onClose: () => void }) {
   const app = useApp();
@@ -26,8 +64,19 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   const [progress, setProgress] = useState("");
 
   useEffect(() => {
-    if (f.file_path && f.file_type !== "application/pdf") receiptURL(f.file_path).then(setUrl).catch(() => setUrl(null));
-    else setUrl(null);
+    let on = true;
+    if (!f.file_path) setUrl(null);
+    else if (f.file_type !== "application/pdf") receiptURL(f.file_path).then((u) => on && setUrl(u)).catch(() => on && setUrl(null));
+    else {
+      const path = f.file_path;
+      (async () => blobRef.current ?? (await downloadReceipt(path)))()
+        .then((b) => pdfPreview(b))
+        .then((u) => on && setUrl(u))
+        .catch(() => on && setUrl(null));
+    }
+    return () => {
+      on = false;
+    };
   }, [f.file_path, f.file_type]);
 
   const set = <K extends keyof LineInput>(k: K, v: LineInput[K]) => setF((p) => ({ ...p, [k]: v }));
@@ -43,10 +92,9 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
       blobRef.current = file;
       setF((p) => ({ ...p, file_path: up.path, file_type: up.type }));
       setOcr({});
-      void read(file, up.type);
+      await read(file, up.type);
     } catch (e) {
       app.fail(e);
-    } finally {
       setBusy("");
     }
   }
@@ -68,26 +116,14 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
       const flags: OcrFlags = {
         date: !!(r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)),
         client: !!r.client,
+        legal: !!r.legal_name,
         nif: !!r.nif_buyer,
         incl: typeof r.total_incl === "number",
         excl: typeof r.total_excl === "number",
       };
+      flags.client = !!knownClient(app.claims, r) || flags.client;
       setF((p) => {
-        const n: LineInput = { ...p, details: { ...p.details }, ocr: r as Record<string, unknown> };
-        if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) n.receipt_date = r.date;
-        if (r.client && (!p.client || !p.client.trim())) n.client = r.client;
-        if (r.nif_buyer) n.nif = r.nif_buyer;
-        if (typeof r.total_incl === "number") n.incl = r.total_incl;
-        if (typeof r.total_excl === "number") n.excl = r.total_excl;
-        if (r.currency === "GBP" || r.currency === "EUR") n.currency = r.currency as Currency;
-        const t = r.suggested_type as ExpType | null | undefined;
-        if (!p.type && t && TYPE_KEYS.includes(t)) n.type = t;
-        const ty = n.type;
-        if (!p.sub && ty && r.suggested_sub && TYPES[ty].subs.includes(r.suggested_sub)) n.sub = r.suggested_sub;
-        if (n.sub === "Others travel expenses" && r.others_kind && !n.details.kind) n.details.kind = r.others_kind;
-        if (n.sub === "Hotels" && r.city && !n.details.cidade) n.details.cidade = r.city;
-        if ((n.sub === "Flight ticket" || n.sub === "Train Ticket") && !n.details.origem && r.route_from) n.details.origem = r.route_from;
-        if ((n.sub === "Flight ticket" || n.sub === "Train Ticket") && !n.details.destino && r.route_to) n.details.destino = r.route_to;
+        const n = applyRead(p, r, app.claims);
         return n;
       });
       if (r.vat_breakdown === false) setNoVat(true);
@@ -151,7 +187,8 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
             <Field label="Data do recibo" ocr={ocr.date} hint="A data que aparece no recibo"><input className="in" type="date" max={app.today} value={f.receipt_date ?? ""} onChange={(e) => set("receipt_date", e.target.value || null)} /></Field>
             <Field label="NIF no recibo" ocr={ocr.nif} hint={rc.company ? `Deve ser ${rc.company.nif}` : undefined}><input className="in" value={f.nif ?? ""} placeholder="NIF do adquirente" onChange={(e) => set("nif", e.target.value)} /></Field>
           </div>
-          <Field label="Entidade (client)" ocr={ocr.client} hint="Restaurante, hotel, companhia aérea…"><input className="in" value={f.client ?? ""} onChange={(e) => set("client", e.target.value)} /></Field>
+          <Field label="Designação comercial (client)" ocr={ocr.client} hint="Nome do restaurante, hotel, loja…"><input className="in" value={f.client ?? ""} onChange={(e) => set("client", e.target.value)} /></Field>
+          <Field label="Denominação legal" ocr={ocr.legal} hint="Empresa que emite a fatura (Lda, S.A.…)"><input className="in" value={f.details.legal ?? ""} onChange={(e) => setD("legal", e.target.value)} /></Field>
           <div className="row3">
             <Field label="Com IVA" ocr={ocr.incl}><input className="in num" type="number" step="0.01" min="0" value={f.incl ?? ""} onChange={(e) => set("incl", numOrNull(e.target.value))} /></Field>
             <Field label="Sem IVA" ocr={ocr.excl} hint={noVat ? "IVA = 0" : Number(f.excl) ? `IVA ${eur(vat)} · ${rate.toFixed(0)} %` : undefined}><input className="in num" type="number" step="0.01" min="0" disabled={noVat} value={(noVat ? f.incl : f.excl) ?? ""} onChange={(e) => set("excl", numOrNull(e.target.value))} /></Field>
