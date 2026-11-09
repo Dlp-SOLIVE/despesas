@@ -3,7 +3,7 @@ import type { Claim, Currency, Details, ExpType, Line, Participant } from "../ty
 import { downloadReceipt, receiptURL, saveLine, uploadReceipt, type LineInput } from "../lib/data";
 import { pdfPreview, readReceiptLocally, type LocalRead } from "../lib/localOcr";
 import { eur } from "../lib/format";
-import { TYPES, TYPE_KEYS, detailSchema, detailText, lineIssues, suggestSub } from "../lib/rules";
+import { NIF_NA, TYPES, TYPE_KEYS, detailSchema, detailText, isNifNA, lineIssues, suggestSub } from "../lib/rules";
 import { Field, Modal, Seg, useApp } from "../ui";
 import { ruleCtx } from "./common";
 
@@ -198,8 +198,9 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
         <div className="form">
           <div className="row2">
             <Field label="Data do recibo" ocr={ocr.date} hint="A data que aparece no recibo"><input className="in" type="date" max={app.today} value={f.receipt_date ?? ""} onChange={(e) => set("receipt_date", e.target.value || null)} /></Field>
-            <Field label="NIF no recibo" ocr={ocr.nif} hint={rc.company ? `Deve ser ${rc.company.nif}` : undefined}><input className="in" value={f.nif ?? ""} placeholder="NIF do adquirente" onChange={(e) => set("nif", e.target.value)} /></Field>
+            <Field label="NIF no recibo" ocr={ocr.nif} hint={isNifNA(f.nif) ? "Recibo sem NIF (N/A)" : rc.company ? `Deve ser ${rc.company.nif}` : undefined}><input className="in" value={f.nif ?? ""} disabled={isNifNA(f.nif)} placeholder="NIF do adquirente" onChange={(e) => set("nif", e.target.value)} /></Field>
           </div>
+          <label className="cb"><input type="checkbox" checked={isNifNA(f.nif)} onChange={(e) => set("nif", e.target.checked ? NIF_NA : "")} /> O recibo não tem NIF (N/A) — ex.: compra num site estrangeiro que não pede NIF</label>
           <Field label="Designação comercial (client)" ocr={ocr.client} hint="Nome do restaurante, hotel, loja…"><input className="in" value={f.client ?? ""} onChange={(e) => set("client", e.target.value)} /></Field>
           <Field label="Denominação legal" ocr={ocr.legal} hint="Empresa que emite a fatura (Lda, S.A.…)"><input className="in" value={f.details.legal ?? ""} onChange={(e) => setD("legal", e.target.value)} /></Field>
           <div className="row3">
