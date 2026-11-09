@@ -1,24 +1,25 @@
 // Regras do procedimento de reembolso (RH Legendre PT) — usadas no ecrã e antes de submeter
 import type { Claim, Company, CostCenter, Details, ExpType, Line, Person, Settings, Trip } from "../types";
-import { MONTHS_PT, parseISO } from "./format";
+import { parseISO } from "./format";
+import { tr } from "./i18n";
 
 export const TYPES: Record<ExpType, { label: string; short: string; hint: string; subs: string[] }> = {
   FDD: {
     label: "Travel E (FDD)",
     short: "Travel",
-    hint: "Deslocação profissional: viagens, alojamento, refeições e transportes durante uma missão",
+    get hint() { return tr("Deslocação profissional: viagens, alojamento, refeições e transportes durante uma missão", "Business travel: trips, accommodation, meals and transport during an assignment"); },
     subs: ["Flight ticket", "Train Ticket", "Car renting", "Hotels", "Restaurants", "Fuel (diesel only)", "Fuel (other)", "Others travel expenses"],
   },
   FDM: {
     label: "Representation E-M (FDM)",
     short: "Representation",
-    hint: "Representação: refeições ou eventos com pessoas externas (clientes, parceiros, investidores)",
+    get hint() { return tr("Representação: refeições ou eventos com pessoas externas (clientes, parceiros, investidores)", "Representation: meals or events with external people (clients, partners, investors)"); },
     subs: ["Flight ticket", "Train Ticket", "Car renting", "Hotels", "Restaurants", "Fuel (renting cars only)", "Others travel expenses"],
   },
   OFF: {
     label: "Office E",
     short: "Office",
-    hint: "Escritório: material, telefone, comida para o escritório, fundo mútuo",
+    get hint() { return tr("Escritório: material, telefone, comida para o escritório, fundo mútuo", "Office: supplies, phone, food for the office, mutual fund"); },
     subs: ["Mutual fund", "Office supplies", "Phone", "Food for office"],
   },
 };
@@ -26,6 +27,9 @@ export const TYPE_KEYS: ExpType[] = ["FDD", "FDM", "OFF"];
 
 export const VAT_DED: Record<string, number> = { "Fuel (diesel only)": 0.5, "Office supplies": 1, Phone: 1, "Food for office": 1 };
 export const OTHERS_KINDS = ["Estacionamento", "Portagem", "Táxi / Uber", "Metro", "Autocarro", "Outro"];
+// Valores gravados em PT (vão para o Excel); só o texto mostrado muda
+const OTHERS_EN: Record<string, string> = { Estacionamento: "Parking", Portagem: "Toll", "Táxi / Uber": "Taxi / Uber", Metro: "Metro", Autocarro: "Bus", Outro: "Other" };
+export const optionLabel = (v: string) => tr(v, OTHERS_EN[v] ?? v);
 
 export type DetailField = {
   k: keyof Details;
@@ -39,35 +43,35 @@ export function detailSchema(sub: string | null): DetailField[] {
   if (!sub) return [];
   if (sub === "Restaurants")
     return [
-      { k: "invite", label: "Convite", kind: "seg", options: ["Internal", "External"] },
-      { k: "motivo", label: "Motivo da refeição", ph: "ex.: Jantar investidor" },
-      { k: "people", label: "Número de pessoas", kind: "int" },
-      { k: "participants", label: "Participantes", kind: "people" },
+      { k: "invite", label: tr("Convite", "Invitation"), kind: "seg", options: ["Internal", "External"] },
+      { k: "motivo", label: tr("Motivo da refeição", "Reason for the meal"), ph: tr("ex.: Jantar investidor", "e.g. Investor dinner") },
+      { k: "people", label: tr("Número de pessoas", "Number of people"), kind: "int" },
+      { k: "participants", label: tr("Participantes", "Participants"), kind: "people" },
     ];
   if (sub === "Flight ticket" || sub === "Train Ticket")
     return [
-      { k: "motivo", label: "Motivo da viagem", ph: sub === "Flight ticket" ? "ex.: Convenção Managers Paris" : "ex.: Visita Obra Hotel Aurora" },
-      { k: "origem", label: "Origem", ph: sub === "Flight ticket" ? "Lisboa" : "Lisboa Oriente" },
-      { k: "destino", label: "Destino", ph: sub === "Flight ticket" ? "Paris Orly" : "Porto Campanhã" },
+      { k: "motivo", label: tr("Motivo da viagem", "Reason for the trip"), ph: sub === "Flight ticket" ? tr("ex.: Convenção Managers Paris", "e.g. Managers convention Paris") : tr("ex.: Visita Obra Hotel Aurora", "e.g. Site visit Hotel Aurora") },
+      { k: "origem", label: tr("Origem", "From"), ph: sub === "Flight ticket" ? "Lisboa" : "Lisboa Oriente" },
+      { k: "destino", label: tr("Destino", "To"), ph: sub === "Flight ticket" ? "Paris Orly" : "Porto Campanhã" },
     ];
   if (sub === "Hotels")
     return [
-      { k: "cidade", label: "Cidade", ph: "Porto" },
-      { k: "motivo", label: "Motivo da estadia", ph: "Reunião cliente ABC" },
+      { k: "cidade", label: tr("Cidade", "City"), ph: "Porto" },
+      { k: "motivo", label: tr("Motivo da estadia", "Reason for the stay"), ph: tr("Reunião cliente ABC", "Meeting with client ABC") },
     ];
   if (sub === "Car renting")
     return [
-      { k: "local", label: "Local / período", ph: "Porto, 3 a 5 nov" },
-      { k: "motivo", label: "Motivo", ph: "Visitas de obra Norte" },
+      { k: "local", label: tr("Local / período", "Place / period"), ph: tr("Porto, 3 a 5 nov", "Porto, 3–5 Nov") },
+      { k: "motivo", label: tr("Motivo", "Reason"), ph: tr("Visitas de obra Norte", "Site visits North") },
     ];
-  if (sub.startsWith("Fuel")) return [{ k: "motivo", label: "Deslocação / motivo", ph: "Deslocação obra Sines" }];
+  if (sub.startsWith("Fuel")) return [{ k: "motivo", label: tr("Deslocação / motivo", "Trip / reason"), ph: tr("Deslocação obra Sines", "Trip to Sines site") }];
   if (sub === "Others travel expenses")
     return [
-      { k: "kind", label: "Tipo", kind: "seg", options: OTHERS_KINDS },
-      { k: "local", label: "Local ou trajeto", ph: "Porto, Rua X  /  aeroporto > hotel" },
-      { k: "motivo", label: "Motivo / projeto associado", ph: "Visita projeto Hotel Aurora" },
+      { k: "kind", label: tr("Tipo", "Type"), kind: "seg", options: OTHERS_KINDS },
+      { k: "local", label: tr("Local ou trajeto", "Place or route"), ph: tr("Porto, Rua X  /  aeroporto > hotel", "Porto, Rua X  /  airport > hotel") },
+      { k: "motivo", label: tr("Motivo / projeto associado", "Reason / related project"), ph: tr("Visita projeto Hotel Aurora", "Visit to Hotel Aurora project") },
     ];
-  return [{ k: "descricao", label: "Descrição", ph: sub === "Food for office" ? "Café e água escritório Lisboa" : "Descrição da compra" }];
+  return [{ k: "descricao", label: tr("Descrição", "Description"), ph: sub === "Food for office" ? tr("Café e água escritório Lisboa", "Coffee and water, Lisbon office") : tr("Descrição da compra", "Description of the purchase") }];
 }
 
 export function detailText(sub: string | null, d: Details = {}): string {
@@ -91,13 +95,13 @@ function detailIssues(sub: string, d: Details): string[] {
   for (const f of detailSchema(sub)) {
     if (f.kind === "people") continue;
     const v = d[f.k];
-    if (v === undefined || v === null || String(v).trim() === "") out.push(`Details: falta "${f.label.toLowerCase()}"`);
+    if (v === undefined || v === null || String(v).trim() === "") out.push(tr(`Details: falta "${f.label.toLowerCase()}"`, `Details: missing "${f.label.toLowerCase()}"`));
   }
   if (sub === "Restaurants") {
     const n = Number(d.people) || 0;
     const listed = (d.participants ?? []).filter((p) => p.name && p.name.trim()).length;
-    if (n && listed < n) out.push(`Indicou ${n} pessoas e listou ${listed}`);
-    if (d.invite === "External" && !(d.participants ?? []).some((p) => p.company && p.company.trim())) out.push("Indique a empresa dos participantes externos");
+    if (n && listed < n) out.push(tr(`Indicou ${n} pessoas e listou ${listed}`, `${n} people entered but ${listed} listed`));
+    if (d.invite === "External" && !(d.participants ?? []).some((p) => p.company && p.company.trim())) out.push(tr("Indique a empresa dos participantes externos", "Enter the company of the external participants"));
   }
   return out;
 }
@@ -135,7 +139,9 @@ export function suggestSub(client: string | null): string | null {
   return null;
 }
 
-export type Issue = { lv: "err" | "warn"; msg: string };
+// k = grupo da regra (usado na checklist, independente da língua)
+export type IssueKey = "img" | "date" | "cat" | "details" | "values" | "nif" | "sub";
+export type Issue = { lv: "err" | "warn"; msg: string; k: IssueKey };
 export type RuleCtx = { settings: Settings; company: Company | null; today: string };
 
 const digits = (s: string) => s.replace(/\D/g, "");
@@ -146,35 +152,35 @@ export const isNifNA = (n: string | null | undefined) => /^n\s*\/?\s*a$/i.test((
 export function lineIssues(l: Line, ctx: RuleCtx): Issue[] {
   const { settings, company, today } = ctx;
   const out: Issue[] = [];
-  if (!l.file_path) out.push({ lv: "err", msg: "Falta imagem do recibo" });
-  if (!l.receipt_date) out.push({ lv: "err", msg: "Data do recibo em falta" });
+  if (!l.file_path) out.push({ lv: "err", k: "img", msg: tr("Falta imagem do recibo", "Receipt image missing") });
+  if (!l.receipt_date) out.push({ lv: "err", k: "date", msg: tr("Data do recibo em falta", "Receipt date missing") });
   else {
     const d = parseISO(l.receipt_date);
     const t = parseISO(today);
-    if (d > t) out.push({ lv: "err", msg: "Data no futuro" });
+    if (d > t) out.push({ lv: "err", k: "date", msg: tr("Data no futuro", "Date in the future") });
     const lim = new Date(t);
     lim.setMonth(lim.getMonth() - settings.max_age_months);
-    if (d < lim) out.push({ lv: "err", msg: `Recibo com mais de ${settings.max_age_months} meses` });
+    if (d < lim) out.push({ lv: "err", k: "date", msg: tr(`Recibo com mais de ${settings.max_age_months} meses`, `Receipt older than ${settings.max_age_months} months`) });
   }
-  if (!l.type || !l.sub) out.push({ lv: "err", msg: "Categoria em falta" });
-  else detailIssues(l.sub, l.details ?? {}).forEach((m) => out.push({ lv: "err", msg: m }));
-  if (!l.client || !l.client.trim()) out.push({ lv: "err", msg: "Entidade (client) em falta" });
+  if (!l.type || !l.sub) out.push({ lv: "err", k: "cat", msg: tr("Categoria em falta", "Category missing") });
+  else detailIssues(l.sub, l.details ?? {}).forEach((m) => out.push({ lv: "err", k: "details", msg: m }));
+  if (!l.client || !l.client.trim()) out.push({ lv: "err", k: "values", msg: tr("Entidade (client) em falta", "Supplier (client) missing") });
   const ex = Number(l.excl);
   const inc = Number(l.incl);
-  if (!(inc > 0) || !(ex > 0)) out.push({ lv: "err", msg: "Valores em falta" });
-  else if (ex > inc + 0.001) out.push({ lv: "err", msg: "Valor sem IVA superior ao valor com IVA" });
+  if (!(inc > 0) || !(ex > 0)) out.push({ lv: "err", k: "values", msg: tr("Valores em falta", "Amounts missing") });
+  else if (ex > inc + 0.001) out.push({ lv: "err", k: "values", msg: tr("Valor sem IVA superior ao valor com IVA", "Amount excl. VAT is higher than amount incl. VAT") });
   else {
     const r = ((inc - ex) / ex) * 100;
-    if (r > 0.5 && ![6, 13, 23].some((v) => Math.abs(v - r) < 0.6)) out.push({ lv: "warn", msg: `Taxa de IVA invulgar (${r.toFixed(1)} %)` });
+    if (r > 0.5 && ![6, 13, 23].some((v) => Math.abs(v - r) < 0.6)) out.push({ lv: "warn", k: "values", msg: tr(`Taxa de IVA invulgar (${r.toFixed(1)} %)`, `Unusual VAT rate (${r.toFixed(1)} %)`) });
   }
-  if (l.currency !== "EUR" && !(Number(l.rate) > 0)) out.push({ lv: "err", msg: "Taxa de câmbio em falta" });
-  if (!l.nif) out.push({ lv: "err", msg: "NIF da empresa em falta no recibo" });
-  else if (isNifNA(l.nif)) out.push({ lv: "warn", msg: "Recibo sem NIF da empresa (N/A)" });
-  else if (company && digits(l.nif) !== digits(company.nif)) out.push({ lv: "err", msg: `NIF não é o da ${company.name}` });
+  if (l.currency !== "EUR" && !(Number(l.rate) > 0)) out.push({ lv: "err", k: "values", msg: tr("Taxa de câmbio em falta", "Exchange rate missing") });
+  if (!l.nif) out.push({ lv: "err", k: "nif", msg: tr("NIF da empresa em falta no recibo", "Company VAT number (NIF) missing on the receipt") });
+  else if (isNifNA(l.nif)) out.push({ lv: "warn", k: "nif", msg: tr("Recibo sem NIF da empresa (N/A)", "Receipt without company VAT number (N/A)") });
+  else if (company && digits(l.nif) !== digits(company.nif)) out.push({ lv: "err", k: "nif", msg: tr(`NIF não é o da ${company.name}`, `VAT number is not ${company.name}'s`) });
   if (l.sub === "Others travel expenses") {
     const s = suggestSub(l.client);
-    if (s) out.push({ lv: "warn", msg: `Parece "${s}": use a subcategoria própria` });
-    if (l.details?.kind === "Outro") out.push({ lv: "warn", msg: '"Outro": confirme que não existe subcategoria própria' });
+    if (s) out.push({ lv: "warn", k: "sub", msg: tr(`Parece "${s}": use a subcategoria própria`, `Looks like "${s}": use the specific subcategory`) });
+    if (l.details?.kind === "Outro") out.push({ lv: "warn", k: "sub", msg: tr('"Outro": confirme que não existe subcategoria própria', '"Other": check there is no specific subcategory') });
   }
   return out;
 }
@@ -190,43 +196,43 @@ export function claimChecklist(
   const company = ctx.companies.find((x) => x.id === (cc ? cc.company_id : u?.company_id)) ?? null;
   const rc: RuleCtx = { settings: ctx.settings, company, today: ctx.today };
   const li = [...c.lines].sort((a, b) => a.no - b.no).map((l) => ({ l, is: lineIssues(l, rc) }));
-  const has = (re: RegExp, lv: "err" | "warn" = "err") =>
-    li.filter((x) => x.is.some((i) => i.lv === lv && re.test(i.msg))).map((x) => `Linha ${x.l.no}`);
+  const has = (keys: IssueKey[], lv: "err" | "warn" = "err") =>
+    li.filter((x) => x.is.some((i) => i.lv === lv && keys.includes(i.k))).map((x) => `${tr("Linha", "Line")} ${x.l.no}`);
   const t = parseISO(ctx.today);
   const [py, pm] = c.period.split("-").map(Number);
   const periodPast = t.getFullYear() * 12 + t.getMonth() > py * 12 + pm - 1;
   void periodPast;
   const veh = ctx.vehicle;
   const items: CheckItem[] = [
-    { ok: !!(u && u.full_name && u.matricula && cc && company), label: "Cabeçalho completo: mês, ano, nome, matrícula, empresa e cost center", refs: u && !u.matricula ? ["Matrícula em falta no perfil"] : [], warn: [] },
-    { ok: c.lines.length + c.trips.length > 0, label: "Pelo menos um recibo ou trajeto registado", refs: [], warn: [] },
-    { ok: c.lines.length <= ctx.settings.max_lines, label: `Máximo de ${ctx.settings.max_lines} recibos por formulário`, refs: c.lines.length > ctx.settings.max_lines ? [`${c.lines.length} recibos`] : [], warn: [] },
-    { ok: !has(/imagem/).length, label: "Cada recibo tem a imagem anexada", refs: has(/imagem/), warn: [] },
-    { ok: !has(/Data|meses|futuro/).length, label: `Datas reais dos recibos, com menos de ${ctx.settings.max_age_months} meses`, refs: has(/Data|meses|futuro/), warn: [] },
-    { ok: !has(/Categoria/).length, label: "Categorias do quadro de referência", refs: has(/Categoria/), warn: has(/Parece|Outro/, "warn") },
-    { ok: !has(/Details|pessoas|empresa dos/).length, label: "Details completos, com participantes nas refeições", refs: has(/Details|pessoas|empresa dos/), warn: [] },
-    { ok: !has(/Valores|IVA|câmbio|Entidade/).length, label: "Valores e IVA coerentes (sem IVA = com IVA quando não discriminado)", refs: has(/Valores|IVA|câmbio|Entidade/), warn: has(/IVA/, "warn") },
-    { ok: !has(/NIF/).length, label: "NIF da empresa em todos os recibos", refs: has(/NIF/), warn: has(/NIF/, "warn") },
-    { ok: !c.trips.length || !!(veh && veh.model && plateOk(veh.plate)), label: "Viatura identificada para os quilómetros (matrícula XX-XX-XX)", refs: [], warn: [] },
-    { ok: !c.trips.length || c.insurance_declared, label: "Declaração de seguro automóvel para quilómetros", refs: [], warn: [] },
+    { ok: !!(u && u.full_name && u.matricula && cc && company), label: tr("Cabeçalho completo: mês, ano, nome, matrícula, empresa e cost center", "Complete header: month, year, name, employee number, company and cost center"), refs: u && !u.matricula ? [tr("Matrícula em falta no perfil", "Employee number missing in profile")] : [], warn: [] },
+    { ok: c.lines.length + c.trips.length > 0, label: tr("Pelo menos um recibo ou trajeto registado", "At least one receipt or trip recorded"), refs: [], warn: [] },
+    { ok: c.lines.length <= ctx.settings.max_lines, label: tr(`Máximo de ${ctx.settings.max_lines} recibos por formulário`, `Maximum of ${ctx.settings.max_lines} receipts per form`), refs: c.lines.length > ctx.settings.max_lines ? [`${c.lines.length} ${tr("recibos", "receipts")}`] : [], warn: [] },
+    { ok: !has(["img"]).length, label: tr("Cada recibo tem a imagem anexada", "Every receipt has its image attached"), refs: has(["img"]), warn: [] },
+    { ok: !has(["date"]).length, label: tr(`Datas reais dos recibos, com menos de ${ctx.settings.max_age_months} meses`, `Actual receipt dates, less than ${ctx.settings.max_age_months} months old`), refs: has(["date"]), warn: [] },
+    { ok: !has(["cat"]).length, label: tr("Categorias do quadro de referência", "Categories from the reference table"), refs: has(["cat"]), warn: has(["sub"], "warn") },
+    { ok: !has(["details"]).length, label: tr("Details completos, com participantes nas refeições", "Complete details, with participants for meals"), refs: has(["details"]), warn: [] },
+    { ok: !has(["values"]).length, label: tr("Valores e IVA coerentes (sem IVA = com IVA quando não discriminado)", "Consistent amounts and VAT (excl. VAT = incl. VAT when VAT is not shown)"), refs: has(["values"]), warn: has(["values"], "warn") },
+    { ok: !has(["nif"]).length, label: tr("NIF da empresa em todos os recibos", "Company VAT number (NIF) on every receipt"), refs: has(["nif"]), warn: has(["nif"], "warn") },
+    { ok: !c.trips.length || !!(veh && veh.model && plateOk(veh.plate)), label: tr("Viatura identificada para os quilómetros (matrícula XX-XX-XX)", "Vehicle identified for mileage (plate XX-XX-XX)"), refs: [], warn: [] },
+    { ok: !c.trips.length || c.insurance_declared, label: tr("Declaração de seguro automóvel para quilómetros", "Car insurance declaration for mileage"), refs: [], warn: [] },
   ];
   return { items, ready: items.every((i) => i.ok), lineIssues: li, company };
 }
 
 export const STATUS: Record<string, { label: string; tone: "info" | "warn" | "err" | "ok" }> = {
-  draft: { label: "Rascunho", tone: "info" },
-  returned: { label: "Devolvido", tone: "err" },
-  submitted: { label: "Aguarda manager", tone: "warn" },
-  approved_mgr: { label: "Aguarda registo RH", tone: "warn" },
-  validated_rh: { label: "Aguarda pagamento", tone: "warn" },
-  posted: { label: "Pago", tone: "ok" },
+  draft: { get label() { return tr("Rascunho", "Draft"); }, tone: "info" },
+  returned: { get label() { return tr("Devolvido", "Returned"); }, tone: "err" },
+  submitted: { get label() { return tr("Aguarda manager", "Awaiting manager"); }, tone: "warn" },
+  approved_mgr: { get label() { return tr("Aguarda registo RH", "Awaiting HR"); }, tone: "warn" },
+  validated_rh: { get label() { return tr("Aguarda pagamento", "Awaiting payment"); }, tone: "warn" },
+  posted: { get label() { return tr("Pago", "Paid"); }, tone: "ok" },
 };
 export const ROLES: Record<string, string> = {
-  colaborador: "Colaborador",
+  get colaborador() { return tr("Colaborador", "Employee"); },
   manager: "Manager",
-  rh: "Recursos Humanos",
-  contabilidade: "Administrativo (pagamentos)",
-  admin: "Administrador",
+  get rh() { return tr("Recursos Humanos", "Human Resources"); },
+  get contabilidade() { return tr("Administrativo (pagamentos)", "Accounts (payments)"); },
+  get admin() { return tr("Administrador", "Administrator"); },
 };
 
 export function packageName(c: Claim, u: Person | undefined) {

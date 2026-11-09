@@ -1,3 +1,4 @@
+import { getLang } from "./i18n";
 // Datas e valores no formato usado pela Legendre PT
 const eurFmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 export const eur = (v: number | null | undefined) => eurFmt.format(Number(v ?? 0));
@@ -26,7 +27,7 @@ export const MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "ju
 export const periodOf = (iso: string) => iso.slice(0, 7);
 export const periodLabel = (p: string) => {
   const [y, m] = p.split("-");
-  const s = MONTHS_PT[Number(m) - 1] ?? "";
+  const s = getLang() === "en" ? (MONTHS_EN[Number(m) - 1] ?? "").toLowerCase() : MONTHS_PT[Number(m) - 1] ?? "";
   return `${s.charAt(0).toUpperCase()}${s.slice(1)} ${y}`;
 };
 export const shiftPeriod = (p: string, delta: number) => {

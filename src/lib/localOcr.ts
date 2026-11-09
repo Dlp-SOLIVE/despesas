@@ -2,6 +2,7 @@
 // 1) código QR fiscal da AT (faturas portuguesas desde 2022) — dados exatos
 // 2) texto do PDF (faturas digitais) ou OCR Tesseract (fotografias) — nome, categoria e, sem QR, data e total
 import jsQR from "jsqr";
+import { tr } from "./i18n";
 import type { OcrResult } from "./data";
 
 export type LocalRead = OcrResult & { source: "qr" | "texto" | "nenhum"; atcud?: string | null; nif_issuer?: string | null; legal_name?: string | null; rotation?: number; raw_text?: string };
@@ -124,7 +125,7 @@ function rotate(src: HTMLCanvasElement, deg: 90 | -90 | 180): HTMLCanvasElement 
 // Lê o texto; se a página estiver deitada (digitalizações/fotos de lado), experimenta as rotações e fica com a mais legível
 async function ocrText(src: HTMLCanvasElement, progress: Progress): Promise<{ text: string; rotation: number }> {
   const { createWorker } = await import("tesseract.js");
-  progress("A ler o texto do recibo…");
+  progress(tr("A ler o texto do recibo…", "Reading the receipt text…"));
   const worker = await createWorker("por");
   try {
     const tries: [number, HTMLCanvasElement][] = src.width > src.height * 1.1 ? [[-90, rotate(src, -90)], [90, rotate(src, 90)]] : [[0, src]];
@@ -264,7 +265,7 @@ export async function readReceiptLocally(blob: Blob, type: string, progress: Pro
   let qr: LocalRead | null = null;
   let text = "";
   let rotation = 0;
-  progress("A procurar o código QR…");
+  progress(tr("A procurar o código QR…", "Looking for the QR code…"));
   if (type === "application/pdf") {
     const pdf = await loadPdf(blob);
     text = await pdfText(pdf);
