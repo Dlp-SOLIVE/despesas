@@ -139,6 +139,9 @@ export type Issue = { lv: "err" | "warn"; msg: string };
 export type RuleCtx = { settings: Settings; company: Company | null; today: string };
 
 const digits = (s: string) => s.replace(/\D/g, "");
+// Recibo sem NIF do adquirente (ex.: compra online num site estrangeiro que não pede NIF)
+export const NIF_NA = "N/A";
+export const isNifNA = (n: string | null | undefined) => /^n\s*\/?\s*a$/i.test((n ?? "").trim());
 
 export function lineIssues(l: Line, ctx: RuleCtx): Issue[] {
   const { settings, company, today } = ctx;
@@ -166,6 +169,7 @@ export function lineIssues(l: Line, ctx: RuleCtx): Issue[] {
   }
   if (l.currency !== "EUR" && !(Number(l.rate) > 0)) out.push({ lv: "err", msg: "Taxa de câmbio em falta" });
   if (!l.nif) out.push({ lv: "err", msg: "NIF da empresa em falta no recibo" });
+  else if (isNifNA(l.nif)) out.push({ lv: "warn", msg: "Recibo sem NIF da empresa (N/A)" });
   else if (company && digits(l.nif) !== digits(company.nif)) out.push({ lv: "err", msg: `NIF não é o da ${company.name}` });
   if (l.sub === "Others travel expenses") {
     const s = suggestSub(l.client);
