@@ -5,6 +5,8 @@ import { loadMe, requestAccess } from "./lib/data";
 import type { Person } from "./types";
 import { Shell } from "./Shell";
 import logo from "./assets/legendre-logo.png";
+import { tr, trServer, useLang } from "./lib/i18n";
+import { LangToggle } from "./ui";
 
 const PENDING_KEY = "despesas_pedido_acesso";
 const COMPANIES = [
@@ -14,18 +16,19 @@ const COMPANIES = [
 
 function KmCheck({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label className="km-check"><input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} /><span>Uso a minha viatura pessoal em serviço e preencho o mapa de quilómetros<small>Pode alterar depois no Perfil.</small></span></label>
+    <label className="km-check"><input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} /><span>{tr("Uso a minha viatura pessoal em serviço e preencho o mapa de quilómetros", "I use my personal car for work and fill in the mileage log")}<small>{tr("Pode alterar depois no Perfil.", "You can change this later in your Profile.")}</small></span></label>
   );
 }
 
 function Brand() {
-  return <div className="brand-lockup"><img src={logo} alt="LEGENDRE" /><span>Despesas</span></div>;
+  return <div className="brand-lockup"><img src={logo} alt="LEGENDRE" /><span>{tr("Despesas", "Expenses")}</span><LangToggle /></div>;
 }
 function Message({ title, detail, children }: { title: string; detail?: string; children?: ReactNode }) {
   return <div className="login-screen"><section className="login-panel"><Brand /><h2>{title}</h2>{detail && <p className="muted">{detail}</p>}{children}</section></div>;
 }
 
 export function App() {
+  useLang(); // redesenha os ecrãs de entrada ao mudar de língua
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
   const [recovery, setRecovery] = useState(false);
@@ -44,7 +47,7 @@ export function App() {
     return () => data.subscription.unsubscribe();
   }, []);
   if (!hasSupabaseConfig) return <Message title="Ligar o Supabase" detail="Faltam as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no Netlify (Site configuration → Environment variables)." />;
-  if (!ready) return <Message title="A abrir…" />;
+  if (!ready) return <Message title={tr("A abrir…", "Opening…")} />;
   if (recovery && session) return <ResetPassword onDone={() => setRecovery(false)} />;
   if (!session) return <Login />;
   return <Gate session={session} />;
@@ -59,10 +62,10 @@ function Gate({ session }: { session: Session }) {
     void load();
   }, [email]);
   const out = () => void supabase?.auth.signOut();
-  if (err) return <Message title="Erro ao carregar o perfil" detail={err}><button className="btn" onClick={out}>Terminar sessão</button></Message>;
-  if (me === undefined) return <Message title="A carregar…" />;
+  if (err) return <Message title={tr("Erro ao carregar o perfil", "Error loading the profile")} detail={err}><button className="btn" onClick={out}>{tr("Terminar sessão", "Sign out")}</button></Message>;
+  if (me === undefined) return <Message title={tr("A carregar…", "Loading…")} />;
   if (me === null) return <RequestAccess email={email} onDone={load} onSignOut={out} />;
-  if (!me.active) return <Message title="Acesso pendente" detail={`O pedido de ${me.full_name} foi recebido. O administrador vai ativar a conta e indicar o seu manager. Depois, basta voltar a entrar.`}><button className="btn" onClick={out}>Terminar sessão</button></Message>;
+  if (!me.active) return <Message title={tr("Acesso pendente", "Access pending")} detail={tr(`O pedido de ${me.full_name} foi recebido. O administrador vai ativar a conta e indicar o seu manager. Depois, basta voltar a entrar.`, `The request from ${me.full_name} has been received. The administrator will activate the account and set your manager. Then just sign in again.`)}><button className="btn" onClick={out}>{tr("Terminar sessão", "Sign out")}</button></Message>;
   return <Shell me={me} onSignOut={out} />;
 }
 
@@ -96,23 +99,23 @@ function RequestAccess({ email, onDone, onSignOut }: { email: string; onDone: ()
       window.localStorage.removeItem(PENDING_KEY);
       onDone();
     } catch (err) {
-      setMsg(err instanceof Error ? err.message : String(err));
+      setMsg(trServer(err instanceof Error ? err.message : String(err)));
     } finally {
       setBusy(false);
     }
   }
   return (
     <div className="login-screen"><section className="login-panel"><Brand />
-      <h2>Pedir acesso às Despesas</h2>
-      <p className="muted">Sessão iniciada como {email}.</p>
+      <h2>{tr("Pedir acesso às Despesas", "Request access to Expenses")}</h2>
+      <p className="muted">{tr("Sessão iniciada como", "Signed in as")} {email}.</p>
       <form className="login-form" onSubmit={submit}>
-        <label>Nome completo<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
-        <label>Nº de colaborador (MAT)<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
-        <label>Empresa<select value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label>{tr("Nome completo", "Full name")}<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label>{tr("Nº de colaborador (MAT)", "Employee number (MAT)")}<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
+        <label>{tr("Empresa", "Company")}<select value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <KmCheck value={km} onChange={setKm} />
-        <button className="btn primary" disabled={busy || !name || !mat} type="submit">Pedir acesso</button>
+        <button className="btn primary" disabled={busy || !name || !mat} type="submit">{tr("Pedir acesso", "Request access")}</button>
       </form>
-      <button className="link-button" onClick={onSignOut}>Terminar sessão</button>
+      <button className="link-button" onClick={onSignOut}>{tr("Terminar sessão", "Sign out")}</button>
       {msg && <div className="notice err-n">{msg}</div>}
     </section></div>
   );
@@ -137,13 +140,13 @@ function Login() {
     setMsg(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
     setBusy(false);
-    if (error) setMsg(error.message === "Invalid login credentials" ? "Email ou palavra-passe incorretos." : error.message);
+    if (error) setMsg(error.message === "Invalid login credentials" ? tr("Email ou palavra-passe incorretos.", "Incorrect email or password.") : error.message);
   }
   async function register(e: FormEvent) {
     e.preventDefault();
     if (!supabase) return;
-    if (pw.length < 6) return setMsg("A palavra-passe deve ter pelo menos 6 caracteres.");
-    if (pw !== pw2) return setMsg("As palavras-passe não coincidem.");
+    if (pw.length < 6) return setMsg(tr("A palavra-passe deve ter pelo menos 6 caracteres.", "The password must have at least 6 characters."));
+    if (pw !== pw2) return setMsg(tr("As palavras-passe não coincidem.", "The passwords do not match."));
     setBusy(true);
     setMsg(null);
     window.localStorage.setItem(PENDING_KEY, JSON.stringify({ name, mat, company, km }));
@@ -160,7 +163,7 @@ function Login() {
         // volta a pedir no ecrã seguinte
       }
     } else {
-      setMsg("Conta criada. Confirme o email (se lhe for pedido) e entre: o pedido de acesso fica a aguardar o administrador.");
+      setMsg(tr("Conta criada. Confirme o email (se lhe for pedido) e entre: o pedido de acesso fica a aguardar o administrador.", "Account created. Confirm your email (if asked) and sign in: the access request will wait for the administrator."));
       setMode("login");
     }
     setBusy(false);
@@ -171,37 +174,37 @@ function Login() {
     setBusy(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
     setBusy(false);
-    setMsg(error ? error.message : "Email de recuperação enviado.");
+    setMsg(error ? error.message : tr("Email de recuperação enviado.", "Recovery email sent."));
   }
   return (
     <div className="login-screen"><section className="login-panel"><Brand />
       {mode === "login" && (
         <form className="login-form" onSubmit={signIn}>
           <label>Email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-          <label>Palavra-passe<input type="password" required value={pw} onChange={(e) => setPw(e.target.value)} /></label>
-          <button className="btn primary" disabled={busy} type="submit">Entrar</button>
-          <button type="button" className="link-button" onClick={() => { setMsg(null); setMode("register"); }}>Criar nova conta</button>
-          <button type="button" className="link-button" onClick={() => { setMsg(null); setMode("reset"); }}>Esqueci a palavra-passe</button>
+          <label>{tr("Palavra-passe", "Password")}<input type="password" required value={pw} onChange={(e) => setPw(e.target.value)} /></label>
+          <button className="btn primary" disabled={busy} type="submit">{tr("Entrar", "Sign in")}</button>
+          <button type="button" className="link-button" onClick={() => { setMsg(null); setMode("register"); }}>{tr("Criar nova conta", "Create new account")}</button>
+          <button type="button" className="link-button" onClick={() => { setMsg(null); setMode("reset"); }}>{tr("Esqueci a palavra-passe", "I forgot my password")}</button>
         </form>
       )}
       {mode === "register" && (
         <form className="login-form" onSubmit={register}>
           <label>Email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-          <label>Nome completo<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
-          <label>Nº de colaborador (MAT)<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
-          <label>Empresa<select value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+          <label>{tr("Nome completo", "Full name")}<input required value={name} onChange={(e) => setName(e.target.value)} /></label>
+          <label>{tr("Nº de colaborador (MAT)", "Employee number (MAT)")}<input required placeholder="MAT12345" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} /></label>
+          <label>{tr("Empresa", "Company")}<select value={company} onChange={(e) => setCompany(e.target.value)}>{COMPANIES.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
           <KmCheck value={km} onChange={setKm} />
-          <label>Palavra-passe<input type="password" required minLength={6} value={pw} onChange={(e) => setPw(e.target.value)} /></label>
-          <label>Confirmar palavra-passe<input type="password" required minLength={6} value={pw2} onChange={(e) => setPw2(e.target.value)} /></label>
-          <button className="btn primary" disabled={busy} type="submit">Pedir acesso</button>
-          <button type="button" className="link-button" onClick={() => setMode("login")}>Voltar</button>
+          <label>{tr("Palavra-passe", "Password")}<input type="password" required minLength={6} value={pw} onChange={(e) => setPw(e.target.value)} /></label>
+          <label>{tr("Confirmar palavra-passe", "Confirm password")}<input type="password" required minLength={6} value={pw2} onChange={(e) => setPw2(e.target.value)} /></label>
+          <button className="btn primary" disabled={busy} type="submit">{tr("Pedir acesso", "Request access")}</button>
+          <button type="button" className="link-button" onClick={() => setMode("login")}>{tr("Voltar", "Back")}</button>
         </form>
       )}
       {mode === "reset" && (
         <form className="login-form" onSubmit={reset}>
           <label>Email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>
-          <button className="btn primary" disabled={busy} type="submit">Enviar email de recuperação</button>
-          <button type="button" className="link-button" onClick={() => setMode("login")}>Voltar</button>
+          <button className="btn primary" disabled={busy} type="submit">{tr("Enviar email de recuperação", "Send recovery email")}</button>
+          <button type="button" className="link-button" onClick={() => setMode("login")}>{tr("Voltar", "Back")}</button>
         </form>
       )}
       {msg && <div className="notice">{msg}</div>}
@@ -216,7 +219,7 @@ function ResetPassword({ onDone }: { onDone: () => void }) {
   async function save(e: FormEvent) {
     e.preventDefault();
     if (!supabase) return;
-    if (pw.length < 6 || pw !== pw2) return setMsg("As palavras-passe têm de coincidir e ter pelo menos 6 caracteres.");
+    if (pw.length < 6 || pw !== pw2) return setMsg(tr("As palavras-passe têm de coincidir e ter pelo menos 6 caracteres.", "The passwords must match and have at least 6 characters."));
     const { error } = await supabase.auth.updateUser({ password: pw });
     if (error) return setMsg(error.message);
     onDone();
@@ -224,9 +227,9 @@ function ResetPassword({ onDone }: { onDone: () => void }) {
   return (
     <div className="login-screen"><section className="login-panel"><Brand />
       <form className="login-form" onSubmit={save}>
-        <label>Nova palavra-passe<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></label>
-        <label>Confirmar<input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></label>
-        <button className="btn primary" type="submit">Guardar</button>
+        <label>{tr("Nova palavra-passe", "New password")}<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} /></label>
+        <label>{tr("Confirmar", "Confirm")}<input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></label>
+        <button className="btn primary" type="submit">{tr("Guardar", "Save")}</button>
       </form>
       {msg && <div className="notice">{msg}</div>}
     </section></div>

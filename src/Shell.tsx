@@ -3,7 +3,8 @@ import type { Claim, FavTrip, Person, Refs, Vehicle } from "./types";
 import { audit, loadClaims, loadFavs, loadRefs, loadVehicle } from "./lib/data";
 import { isoToday, initials } from "./lib/format";
 import { ROLES } from "./lib/rules";
-import { AppContext, DialogHost, type AppCtx, type View } from "./ui";
+import { AppContext, DialogHost, LangToggle, type AppCtx, type View } from "./ui";
+import { tr, trServer, useLang } from "./lib/i18n";
 import { MonthView } from "./views/Month";
 import { KmView } from "./views/Km";
 import { HistoryView, ProfileView } from "./views/History";
@@ -14,6 +15,7 @@ import logo from "./assets/legendre-logo.png";
 const UI_KEY = "despesas_ui";
 
 export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () => void }) {
+  const lang = useLang();
   const [refs, setRefs] = useState<Refs | null>(null);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
@@ -83,7 +85,7 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
       selId: ui.selId,
       reload,
       toast,
-      fail: (e: unknown) => toast(e instanceof Error ? e.message : String(e), "err"),
+      fail: (e: unknown) => toast(trServer(e instanceof Error ? e.message : String(e)), "err"),
       go: (view: View, claimId?: string | null) => {
         const next = { view, selId: claimId === undefined ? ui.selId : claimId };
         if (next.view !== ui.view || next.selId !== ui.selId) window.history.pushState({ despesas: next }, "");
@@ -94,26 +96,28 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
         void audit(me.id, action).catch(() => undefined);
       },
     };
-  }, [me, refs, claims, vehicle, favs, ui.selId, reload, toast]);
+    // a língua entra nas dependências para os ecrãs se redesenharem ao mudar
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, refs, claims, vehicle, favs, ui.selId, reload, toast, lang]);
 
   const approver = ["manager", "rh", "contabilidade", "admin"].includes(me.role);
   const pend = ctx && approver ? queueFor(ctx).length : 0;
   const nav: [View, string][] = [
-    ...(approver ? [["aprov", me.role === "contabilidade" ? "Pagamentos" : "Aprovações"] as [View, string]] : []),
-    ["mes", "O meu mês"],
-    ...(me.uses_km ? [["km", "Quilómetros"] as [View, string]] : []),
-    ["hist", "Histórico"],
-    ["perfil", "Perfil"],
-    ...(me.role === "admin" ? [["admin", "Administração"] as [View, string]] : []),
+    ...(approver ? [["aprov", me.role === "contabilidade" ? tr("Pagamentos", "Payments") : tr("Aprovações", "Approvals")] as [View, string]] : []),
+    ["mes", tr("O meu mês", "My month")],
+    ...(me.uses_km ? [["km", tr("Quilómetros", "Mileage")] as [View, string]] : []),
+    ["hist", tr("Histórico", "History")],
+    ["perfil", tr("Perfil", "Profile")],
+    ...(me.role === "admin" ? [["admin", tr("Administração", "Administration")] as [View, string]] : []),
   ];
   const active = ui.view === "review" ? (approver ? "aprov" : "hist") : ui.view;
 
   return (
     <div className="app">
       <header className="appbar">
-        <button type="button" className="home" onClick={() => ctx?.go(approver && me.role !== "manager" ? "aprov" : "mes", null)} aria-label="Início">
+        <button type="button" className="home" onClick={() => ctx?.go(approver && me.role !== "manager" ? "aprov" : "mes", null)} aria-label={tr("Início", "Home")}>
           <img src={logo} alt="LEGENDRE" />
-          <span className="prod">Despesas</span>
+          <span className="prod">{tr("Despesas", "Expenses")}</span>
         </button>
         <nav>
           {nav.map(([k, l]) => (
@@ -124,13 +128,14 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
         </nav>
         <div className="me">
           <span className="me-n">{me.full_name}<small>{ROLES[me.role]}</small></span>
+          <LangToggle />
           <span className="av">{initials(me.full_name)}</span>
-          <button className="link-button" onClick={onSignOut}>Sair</button>
+          <button className="link-button" onClick={onSignOut}>{tr("Sair", "Sign out")}</button>
         </div>
       </header>
-      {error && <div className="app-body" style={{ paddingBottom: 0 }}><div className="notice err-n">{error} <button className="link-button" onClick={() => void reload()}>Tentar de novo</button></div></div>}
+      {error && <div className="app-body" style={{ paddingBottom: 0 }}><div className="notice err-n">{error} <button className="link-button" onClick={() => void reload()}>{tr("Tentar de novo", "Try again")}</button></div></div>}
       {!ctx ? (
-        <div className="app-body"><p className="muted">A carregar…</p></div>
+        <div className="app-body"><p className="muted">{tr("A carregar…", "Loading…")}</p></div>
       ) : (
         <AppContext.Provider value={ctx}>
           {ui.view === "mes" && <MonthView />}

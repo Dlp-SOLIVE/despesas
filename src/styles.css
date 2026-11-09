@@ -21,6 +21,8 @@ h1,h2,h3,h4{font-family:var(--font-display);font-weight:500;margin:0}
 .login-panel h2{font-size:22px}
 .brand-lockup{display:flex;align-items:center;gap:14px}
 .brand-lockup img{height:24px}
+.lang-tg{display:inline-flex;border:1px solid var(--black-30);border-radius:2px;overflow:hidden;flex:none}.lang-tg button{background:#fff;border:0;padding:4px 8px;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--black-70);cursor:pointer}.lang-tg button+button{border-left:1px solid var(--black-30)}.lang-tg button.on{background:#000;color:#fff}.lang-tg button:focus-visible{outline:none;box-shadow:var(--focus)}
+.brand-lockup .lang-tg{margin-left:auto}
 .brand-lockup span{font-family:var(--font-display);font-size:16px;padding-left:14px;border-left:1px solid var(--black-15)}
 .login-form{display:grid;gap:12px}
 .login-form label{display:grid;gap:4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--black-70)}

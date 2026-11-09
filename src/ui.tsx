@@ -3,6 +3,18 @@ import type { Claim, FavTrip, Person, Refs, Vehicle } from "./types";
 import { receiptURL } from "./lib/data";
 import { STATUS, type Totals } from "./lib/rules";
 import { eur, fmtDateTime, num1 } from "./lib/format";
+import { setLang, tr, trAction, useLang } from "./lib/i18n";
+
+// ───────── Botão de língua PT | EN ─────────
+export function LangToggle() {
+  const lang = useLang();
+  return (
+    <div className="lang-tg" role="group" aria-label="Língua / Language">
+      <button type="button" className={lang === "pt" ? "on" : ""} aria-pressed={lang === "pt"} onClick={() => setLang("pt")} title="Português">PT</button>
+      <button type="button" className={lang === "en" ? "on" : ""} aria-pressed={lang === "en"} onClick={() => setLang("en")} title="English">EN</button>
+    </div>
+  );
+}
 
 // ───────── Contexto da aplicação ─────────
 export type View = "mes" | "km" | "hist" | "perfil" | "aprov" | "review" | "admin";
@@ -55,9 +67,9 @@ export function DialogHost() {
     setReq(null);
   };
   return (
-    <Modal title="Confirmar" onClose={() => close(null)} footer={<><button className="btn" onClick={() => close(null)}>Cancelar</button><button className="btn primary" disabled={req.withReason && !reason.trim()} onClick={() => close(req.withReason ? reason.trim() : "ok")}>Confirmar</button></>}>
+    <Modal title={tr("Confirmar", "Confirm")} onClose={() => close(null)} footer={<><button className="btn" onClick={() => close(null)}>{tr("Cancelar", "Cancel")}</button><button className="btn primary" disabled={req.withReason && !reason.trim()} onClick={() => close(req.withReason ? reason.trim() : "ok")}>{tr("Confirmar", "Confirm")}</button></>}>
       <p style={{ marginTop: 0 }}>{req.text}</p>
-      {req.withReason && <Field label="Motivo (obrigatório, fica no audit log)"><textarea className="in" rows={3} autoFocus value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
+      {req.withReason && <Field label={tr("Motivo (obrigatório, fica no audit log)", "Reason (required, kept in the audit log)")}><textarea className="in" rows={3} autoFocus value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
     </Modal>
   );
 }
@@ -73,7 +85,7 @@ export function StatusChip({ status }: { status: string }) {
 export function Field({ label, hint, error, ocr, children }: { label: string; hint?: ReactNode; error?: string; ocr?: boolean; children: ReactNode }) {
   return (
     <div className="fld">
-      <label>{label}{ocr && <span className="ocr">Lido</span>}</label>
+      <label>{label}{ocr && <span className="ocr">{tr("Lido", "Read")}</span>}</label>
       {children}
       {error ? <div className="hint err">{error}</div> : hint ? <div className="hint">{hint}</div> : null}
     </div>
@@ -101,7 +113,7 @@ export function Modal({ title, onClose, children, footer, wide }: { title: strin
   return (
     <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={wide ? "modal wide" : "modal"} role="dialog" aria-modal="true" aria-label={title}>
-        <div className="modal-h"><h3>{title}</h3><button className="x" onClick={onClose} aria-label="Fechar">×</button></div>
+        <div className="modal-h"><h3>{title}</h3><button className="x" onClick={onClose} aria-label={tr("Fechar", "Close")}>×</button></div>
         <div className="modal-b">{children}</div>
         {footer && <div className="modal-f">{footer}</div>}
       </div>
@@ -119,8 +131,8 @@ export function Thumb({ path, type, onClick, size = 40 }: { path: string | null;
   }, [path, type]);
   const st = { width: size, height: Math.round(size * 1.3) };
   if (!path) return <span className="thumb empty" style={st}>—</span>;
-  if (type === "application/pdf") return <button type="button" className="thumb pdf" style={st} onClick={onClick} aria-label="Ver recibo">PDF</button>;
-  return <button type="button" className="thumb" style={{ ...st, backgroundImage: url ? `url(${url})` : "none" }} onClick={onClick} aria-label="Ver recibo"></button>;
+  if (type === "application/pdf") return <button type="button" className="thumb pdf" style={st} onClick={onClick} aria-label={tr("Ver recibo", "View receipt")}>PDF</button>;
+  return <button type="button" className="thumb" style={{ ...st, backgroundImage: url ? `url(${url})` : "none" }} onClick={onClick} aria-label={tr("Ver recibo", "View receipt")}></button>;
 }
 export function FilePreview({ path, type, onClose }: { path: string; type: string | null; onClose: () => void }) {
   const [url, setUrl] = useState<string | null>(null);
@@ -128,20 +140,20 @@ export function FilePreview({ path, type, onClose }: { path: string; type: strin
     receiptURL(path).then(setUrl).catch(() => setUrl(null));
   }, [path]);
   return (
-    <Modal title="Recibo" onClose={onClose} wide>
-      {url && (type === "application/pdf" ? <iframe src={url} title="Recibo" style={{ width: "100%", height: "70vh", border: 0 }} /> : <img src={url} alt="Recibo" style={{ maxWidth: "100%", maxHeight: "70vh", display: "block", margin: "0 auto" }} />)}
+    <Modal title={tr("Recibo", "Receipt")} onClose={onClose} wide>
+      {url && (type === "application/pdf" ? <iframe src={url} title={tr("Recibo", "Receipt")} style={{ width: "100%", height: "70vh", border: 0 }} /> : <img src={url} alt={tr("Recibo", "Receipt")} style={{ maxWidth: "100%", maxHeight: "70vh", display: "block", margin: "0 auto" }} />)}
     </Modal>
   );
 }
 export function Kpis({ t }: { t: Totals }) {
-  const n = (x: number) => `${x} recibo${x === 1 ? "" : "s"}`;
+  const n = (x: number) => `${x} ${tr("recibo", "receipt")}${x === 1 ? "" : "s"}`;
   return (
     <div className="kpis">
       <div><div className="l">1 · Travel E (FDD)</div><div className="v">{eur(t.FDD)}</div><div className="s">{n(t.n.FDD)}</div></div>
       <div><div className="l">2 · Representation (FDM)</div><div className="v">{eur(t.FDM)}</div><div className="s">{n(t.n.FDM)}</div></div>
-      <div><div className="l">3 · Quilómetros</div><div className="v">{eur(t.kmEUR)}</div><div className="s">{num1(t.km)} km × {eur(t.kmRate)}</div></div>
+      <div><div className="l">3 · {tr("Quilómetros", "Mileage")}</div><div className="v">{eur(t.kmEUR)}</div><div className="s">{num1(t.km)} km × {eur(t.kmRate)}</div></div>
       <div><div className="l">4 · Office E</div><div className="v">{eur(t.OFF)}</div><div className="s">{n(t.n.OFF)}</div></div>
-      <div className="total"><div className="l">Total geral</div><div className="v">{eur(t.total)}</div><div className="s">IVA dedutível {eur(t.vat)}</div></div>
+      <div className="total"><div className="l">{tr("Total geral", "Grand total")}</div><div className="v">{eur(t.total)}</div><div className="s">{tr("IVA dedutível", "Deductible VAT")} {eur(t.vat)}</div></div>
     </div>
   );
 }
@@ -153,7 +165,7 @@ export function Timeline({ claim, people }: { claim: Claim; people: Person[] }) 
   return (
     <div className="timeline">
       {claim.history.map((h) => (
-        <div key={h.id}><span className="when">{fmtDateTime(h.at)}</span><span><b>{h.action}</b> · {name(h.actor_id)}{h.comment ? <span className="muted"> — {h.comment}</span> : null}</span></div>
+        <div key={h.id}><span className="when">{fmtDateTime(h.at)}</span><span><b>{trAction(h.action)}</b> · {name(h.actor_id)}{h.comment ? <span className="muted"> — {h.comment}</span> : null}</span></div>
       ))}
     </div>
   );
