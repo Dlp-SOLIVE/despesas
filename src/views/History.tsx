@@ -3,6 +3,7 @@ import { updateProfile } from "../lib/data";
 import { eur, num1, periodLabel } from "../lib/format";
 import { ROLES, claimTotals } from "../lib/rules";
 import { Empty, Field, PageHead, StatusChip, useApp } from "../ui";
+import { tr } from "../lib/i18n";
 
 export function HistoryView() {
   const app = useApp();
@@ -12,16 +13,16 @@ export function HistoryView() {
   const name = (id: string) => app.refs.people.find((p) => p.id === id)?.full_name ?? "—";
   return (
     <div className="app-body">
-      <PageHead eyebrow={scope === "all" ? "Pedidos visíveis para si" : "Os meus pedidos"} title="Histórico" actions={others ? (
+      <PageHead eyebrow={scope === "all" ? tr("Pedidos visíveis para si", "Claims visible to you") : tr("Os meus pedidos", "My claims")} title={tr("Histórico", "History")} actions={others ? (
         <div className="seg" style={{ gridTemplateColumns: "1fr 1fr", minWidth: 220 }}>
-          <button className={scope === "mine" ? "on" : ""} onClick={() => setScope("mine")}>Os meus</button>
-          <button className={scope === "all" ? "on" : ""} onClick={() => setScope("all")}>Todos</button>
+          <button className={scope === "mine" ? "on" : ""} onClick={() => setScope("mine")}>{tr("Os meus", "Mine")}</button>
+          <button className={scope === "all" ? "on" : ""} onClick={() => setScope("all")}>{tr("Todos", "All")}</button>
         </div>
       ) : undefined} />
       {list.length ? (
         <div className="tbl-wrap">
           <table>
-            <thead><tr><th>Mês</th>{scope === "all" && <th>Colaborador</th>}<th>Cost center</th><th className="num">Recibos</th><th className="num">Km</th><th className="num">Total</th><th>Estado</th></tr></thead>
+            <thead><tr><th>{tr("Mês", "Month")}</th>{scope === "all" && <th>{tr("Colaborador", "Employee")}</th>}<th>Cost center</th><th className="num">{tr("Recibos", "Receipts")}</th><th className="num">Km</th><th className="num">Total</th><th>{tr("Estado", "Status")}</th></tr></thead>
             <tbody>
               {list.map((c) => {
                 const t = claimTotals(c, app.refs.settings);
@@ -36,7 +37,7 @@ export function HistoryView() {
           </table>
         </div>
       ) : (
-        <Empty title="Ainda sem pedidos" />
+        <Empty title={tr("Ainda sem pedidos", "No claims yet")} />
       )}
     </div>
   );
@@ -64,22 +65,22 @@ export function ProfileView() {
   }
   return (
     <div className="app-body">
-      <PageHead eyebrow="Perfil" title={me.full_name} pills={<><span className="pill">{me.matricula ?? "Sem matrícula"}</span><span className="pill">{ROLES[me.role]}</span></>} />
+      <PageHead eyebrow={tr("Perfil", "Profile")} title={me.full_name} pills={<><span className="pill">{me.matricula ?? tr("Sem matrícula", "No employee number")}</span><span className="pill">{ROLES[me.role]}</span></>} />
       <div className="grid3">
         <div>
-          <div className="k">Dados</div>
-          <p>{me.email}<br />{co?.name ?? "Empresa por definir"}<br />Manager: {mgr?.full_name ?? "por atribuir"}</p>
-          <Field label="Matrícula" hint="Aparece no nome do ficheiro Excel"><input className="in" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} onBlur={() => mat !== (me.matricula ?? "") && void patch({ matricula: mat.trim() }, "Matrícula guardada.")} /></Field>
-          <p className="muted small">Empresa, perfil e manager são alterados pelo administrador.</p>
+          <div className="k">{tr("Dados", "Details")}</div>
+          <p>{me.email}<br />{co?.name ?? tr("Empresa por definir", "Company not set")}<br />Manager: {mgr?.full_name ?? tr("por atribuir", "not assigned")}</p>
+          <Field label={tr("Matrícula", "Employee number (MAT)")} hint={tr("Aparece no nome do ficheiro Excel", "Shown in the Excel file name")}><input className="in" value={mat} onChange={(e) => setMat(e.target.value.toUpperCase())} onBlur={() => mat !== (me.matricula ?? "") && void patch({ matricula: mat.trim() }, tr("Matrícula guardada.", "Employee number saved."))} /></Field>
+          <p className="muted small">{tr("Empresa, perfil e manager são alterados pelo administrador.", "Company, role and manager are changed by the administrator.")}</p>
         </div>
         <div>
-          <div className="k">Assinatura</div>
-          <p>As aprovações registadas na plataforma valem como assinatura.</p>
+          <div className="k">{tr("Assinatura", "Signature")}</div>
+          <p>{tr("As aprovações registadas na plataforma valem como assinatura.", "Approvals recorded on the platform count as a signature.")}</p>
         </div>
         <div>
-          <div className="k">Viatura pessoal</div>
-          <label className="cb"><input type="checkbox" disabled={busy} checked={me.uses_km} onChange={(e) => void patch({ uses_km: e.target.checked }, e.target.checked ? "Mapa de quilómetros ativado." : "Mapa de quilómetros desativado.")} /> Uso a minha viatura pessoal em serviço</label>
-          {me.uses_km && <><p>{app.vehicle?.model || "—"}<br />{app.vehicle?.plate ?? ""}</p><button className="btn" onClick={() => app.go("km")}>Editar em Quilómetros</button></>}
+          <div className="k">{tr("Viatura pessoal", "Personal car")}</div>
+          <label className="cb"><input type="checkbox" disabled={busy} checked={me.uses_km} onChange={(e) => void patch({ uses_km: e.target.checked }, e.target.checked ? tr("Mapa de quilómetros ativado.", "Mileage log enabled.") : tr("Mapa de quilómetros desativado.", "Mileage log disabled."))} /> {tr("Uso a minha viatura pessoal em serviço", "I use my personal car for work")}</label>
+          {me.uses_km && <><p>{app.vehicle?.model || "—"}<br />{app.vehicle?.plate ?? ""}</p><button className="btn" onClick={() => app.go("km")}>{tr("Editar em Quilómetros", "Edit in Mileage")}</button></>}
         </div>
       </div>
     </div>

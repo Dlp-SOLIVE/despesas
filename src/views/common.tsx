@@ -5,6 +5,7 @@ import { buildExcel, buildPDF, download } from "../lib/export";
 import { periodLabel, periodOf } from "../lib/format";
 import { packageName, type RuleCtx } from "../lib/rules";
 import { Field, Modal, StatusChip, useApp, type AppCtx } from "../ui";
+import { tr } from "../lib/i18n";
 
 export function ruleCtx(app: AppCtx, claim: Claim): RuleCtx {
   const cc = app.refs.costCenters.find((x) => x.code === claim.cost_center);
@@ -79,12 +80,12 @@ export function NewClaimModal({ period, onClose }: { period: string; onClose: ()
     }
   }
   return (
-    <Modal title={`Novo pedido · ${periodLabel(period)}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancelar</button><button className="btn primary" disabled={!cc || busy} onClick={() => void create()}>Criar pedido</button></>}>
-      <p className="muted" style={{ marginTop: 0 }}>Um único pedido por mês e por cost center. Se não souber o código, pergunte ao seu manager.</p>
+    <Modal title={`${tr("Novo pedido", "New claim")} · ${periodLabel(period)}`} onClose={onClose} footer={<><button className="btn" onClick={onClose}>{tr("Cancelar", "Cancel")}</button><button className="btn primary" disabled={!cc || busy} onClick={() => void create()}>{tr("Criar pedido", "Create claim")}</button></>}>
+      <p className="muted" style={{ marginTop: 0 }}>{tr("Um único pedido por mês e por cost center. Se não souber o código, pergunte ao seu manager.", "One claim per month and per cost center. If you do not know the code, ask your manager.")}</p>
       {opts.length ? (
         <Field label="Cost center"><select className="in" value={cc} onChange={(e) => setCc(e.target.value)}>{opts.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.label}</option>)}</select></Field>
       ) : (
-        <p>{app.refs.costCenters.length ? "Já tem pedido para todos os cost centers ativos este mês." : "Ainda não há cost centers. Peça ao administrador para os criar."}</p>
+        <p>{app.refs.costCenters.length ? tr("Já tem pedido para todos os cost centers ativos este mês.", "You already have a claim for every active cost center this month.") : tr("Ainda não há cost centers. Peça ao administrador para os criar.", "There are no cost centers yet. Ask the administrator to create them.")}</p>
       )}
     </Modal>
   );
@@ -109,8 +110,8 @@ export function DownloadBtns({ claim }: { claim: Claim }) {
   }
   return (
     <>
-      <button className="btn" disabled={!!busy} onClick={() => void run("x")}>{busy === "x" ? "A gerar…" : "Excel"}</button>
-      <button className="btn" disabled={!!busy} onClick={() => void run("p")}>{busy === "p" ? "A gerar…" : "PDF recibos"}</button>
+      <button className="btn" disabled={!!busy} onClick={() => void run("x")}>{busy === "x" ? tr("A gerar…", "Generating…") : "Excel"}</button>
+      <button className="btn" disabled={!!busy} onClick={() => void run("p")}>{busy === "p" ? tr("A gerar…", "Generating…") : tr("PDF recibos", "Receipts PDF")}</button>
     </>
   );
 }

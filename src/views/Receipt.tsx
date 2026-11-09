@@ -3,7 +3,8 @@ import type { Claim, Currency, Details, ExpType, Line, Participant } from "../ty
 import { downloadReceipt, receiptURL, saveLine, uploadReceipt, type LineInput } from "../lib/data";
 import { pdfPreview, readReceiptLocally, type LocalRead } from "../lib/localOcr";
 import { eur } from "../lib/format";
-import { NIF_NA, TYPES, TYPE_KEYS, detailSchema, detailText, isNifNA, lineIssues, suggestSub } from "../lib/rules";
+import { NIF_NA, TYPES, TYPE_KEYS, detailSchema, detailText, isNifNA, lineIssues, optionLabel, suggestSub } from "../lib/rules";
+import { tr } from "../lib/i18n";
 import { Field, Modal, Seg, useApp } from "../ui";
 import { ruleCtx } from "./common";
 
@@ -90,7 +91,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
 
   async function pick(file: File | undefined) {
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) return app.toast("Ficheiro acima de 10 MB. Reduza a resolução da fotografia.", "err");
+    if (file.size > 10 * 1024 * 1024) return app.toast(tr("Ficheiro acima de 10 MB. Reduza a resolução da fotografia.", "File over 10 MB. Reduce the photo resolution."), "err");
     setBusy("up");
     try {
       const up = await uploadReceipt(file, app.me.id, claim.id);
@@ -108,14 +109,14 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
     const path = f.file_path;
     if (!fileArg && !path) return;
     setBusy("ocr");
-    setProgress("A preparar…");
+    setProgress(tr("A preparar…", "Preparing…"));
     try {
       const blob = fileArg ?? blobRef.current ?? (path ? await downloadReceipt(path) : null);
       if (!blob) return;
       blobRef.current = blob;
       const r = await readReceiptLocally(blob, typeArg ?? f.file_type ?? blob.type, setProgress);
       if (r.source === "nenhum") {
-        app.toast("Não foi possível ler este recibo. Preencha os campos à mão.", "err");
+        app.toast(tr("Não foi possível ler este recibo. Preencha os campos à mão.", "This receipt could not be read. Fill in the fields manually."), "err");
         return;
       }
       const flags: OcrFlags = {
@@ -134,7 +135,7 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
       if (r.vat_breakdown === false) setNoVat(true);
       else if (r.vat_breakdown === true) setNoVat(false);
       setOcr(flags);
-      app.toast(r.source === "qr" ? "Dados lidos do código QR da fatura. Confirme a entidade e complete os Details." : "Texto lido (sem código QR). Confirme data, valores e IVA.");
+      app.toast(r.source === "qr" ? tr("Dados lidos do código QR da fatura. Confirme a entidade e complete os Details.", "Data read from the invoice QR code. Check the supplier and complete the Details.") : tr("Texto lido (sem código QR). Confirme data, valores e IVA.", "Text read (no QR code). Check the date, amounts and VAT."));
     } catch (e) {
       app.fail(e);
     } finally {
@@ -152,13 +153,13 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   const schema = detailSchema(f.sub);
 
   async function save() {
-    if (errs) return app.toast("Preencha todos os campos obrigatórios antes de guardar.", "err");
+    if (errs) return app.toast(tr("Preencha todos os campos obrigatórios antes de guardar.", "Fill in all required fields before saving."), "err");
     setBusy("save");
     try {
       await saveLine(claim.id, { ...f, id: line?.id, excl: noVat ? f.incl : f.excl });
       app.log(`${line ? "Editou" : "Adicionou"} recibo ${f.no} · ${claim.cost_center} ${claim.period}`);
       await app.reload();
-      app.toast(errs ? `Recibo nº ${f.no} guardado com ${errs} erro(s) a corrigir antes de submeter.` : `Recibo nº ${f.no} guardado.`);
+      app.toast(errs ? tr(`Recibo nº ${f.no} guardado com ${errs} erro(s) a corrigir antes de submeter.`, `Receipt no. ${f.no} saved with ${errs} error(s) to fix before submitting.`) : tr(`Recibo nº ${f.no} guardado.`, `Receipt no. ${f.no} saved.`));
       onClose();
     } catch (e) {
       app.fail(e);
@@ -168,66 +169,66 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
   }
 
   return (
-    <Modal wide title={`${line ? "Editar" : "Novo"} recibo · nº ${f.no}`} onClose={onClose} footer={
+    <Modal wide title={line ? tr(`Editar recibo · nº ${f.no}`, `Edit receipt · no. ${f.no}`) : tr(`Novo recibo · nº ${f.no}`, `New receipt · no. ${f.no}`)} onClose={onClose} footer={
       <>
-        <span className={errs ? "push-left" : "muted push-left"} style={errs ? { color: "var(--danger)" } : undefined}>{errs ? `Faltam ${errs} campo(s) obrigatório(s) — ver a lista à esquerda` : "Recibo conforme"}</span>
-        <button className="btn" onClick={onClose}>Cancelar</button>
-        <button className="btn primary" disabled={!!busy || errs > 0} title={errs ? "Preencha todos os campos obrigatórios (procedimento RH)" : undefined} onClick={() => void save()}>{busy === "save" ? "A guardar…" : "Guardar recibo"}</button>
+        <span className={errs ? "push-left" : "muted push-left"} style={errs ? { color: "var(--danger)" } : undefined}>{errs ? tr(`Faltam ${errs} campo(s) obrigatório(s) — ver a lista à esquerda`, `${errs} required field(s) missing — see the list on the left`) : tr("Recibo conforme", "Receipt compliant")}</span>
+        <button className="btn" onClick={onClose}>{tr("Cancelar", "Cancel")}</button>
+        <button className="btn primary" disabled={!!busy || errs > 0} title={errs ? tr("Preencha todos os campos obrigatórios (procedimento RH)", "Fill in all required fields (HR procedure)") : undefined} onClick={() => void save()}>{busy === "save" ? tr("A guardar…", "Saving…") : tr("Guardar recibo", "Save receipt")}</button>
       </>
     }>
       <div className="rc-grid">
         <div>
           <div className={f.file_path ? "drop has" : "drop"} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={(e) => e.key === "Enter" && fileRef.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void pick(e.dataTransfer.files[0]); }}>
             <span className="no">{f.no}</span>
-            {busy === "up" ? <span className="muted">A carregar…</span> : f.file_path ? (url ? <img src={url} alt="Recibo" style={rot ? { transform: `rotate(${rot}deg)` } : undefined} /> : <span><b>PDF anexado</b><br /><span className="muted">Clique para substituir</span></span>) : <span><b>Fotografar ou carregar recibo</b><br /><span className="muted">Imagem ou PDF · arraste para aqui</span></span>}
+            {busy === "up" ? <span className="muted">{tr("A carregar…", "Uploading…")}</span> : f.file_path ? (url ? <img src={url} alt={tr("Recibo", "Receipt")} style={rot ? { transform: `rotate(${rot}deg)` } : undefined} /> : <span><b>{tr("PDF anexado", "PDF attached")}</b><br /><span className="muted">{tr("Clique para substituir", "Click to replace")}</span></span>) : <span><b>{tr("Fotografar ou carregar recibo", "Take a photo or upload receipt")}</b><br /><span className="muted">{tr("Imagem ou PDF · arraste para aqui", "Image or PDF · drag it here")}</span></span>}
             <input ref={fileRef} type="file" accept="image/*,application/pdf" hidden onChange={(e) => void pick(e.target.files?.[0])} />
           </div>
           <div className="ocr-bar">
-            <button className="btn dark" disabled={!f.file_path || !!busy} onClick={() => void read()}>{busy === "ocr" ? progress || "A ler recibo…" : "Ler recibo novamente"}</button>
-            <span className="muted">Lido automaticamente ao carregar: código QR das faturas portuguesas (dados exatos) ou texto do recibo. Tudo no seu computador; nada é enviado para serviços externos. Todos os campos podem ser corrigidos à mão.</span>
+            <button className="btn dark" disabled={!f.file_path || !!busy} onClick={() => void read()}>{busy === "ocr" ? progress || tr("A ler recibo…", "Reading receipt…") : tr("Ler recibo novamente", "Read receipt again")}</button>
+            <span className="muted">{tr("Lido automaticamente ao carregar: código QR das faturas portuguesas (dados exatos) ou texto do recibo. Tudo no seu computador; nada é enviado para serviços externos. Todos os campos podem ser corrigidos à mão.", "Read automatically on upload: QR code on Portuguese invoices (exact data) or the receipt text. Everything runs on your computer; nothing is sent to external services. All fields can be corrected manually.")}</span>
           </div>
           {f.ocr && (
             <details className="muted small" style={{ marginBottom: 8 }}>
-              <summary style={{ cursor: "pointer" }}>Texto lido do recibo</summary>
-              <div>Origem: {String((f.ocr as { source?: string }).source ?? "—")} · rotação {rot}° · versão 03-11-c</div>
-              <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, maxHeight: 180, overflow: "auto", background: "var(--black-04)", padding: 8, margin: "6px 0 0" }}>{String((f.ocr as { raw_text?: string }).raw_text ?? "(sem texto)")}</pre>
+              <summary style={{ cursor: "pointer" }}>{tr("Texto lido do recibo", "Text read from the receipt")}</summary>
+              <div>{tr("Origem", "Source")}: {String((f.ocr as { source?: string }).source ?? "—")} · {tr("rotação", "rotation")} {rot}° · {tr("versão", "version")} 03-11-c</div>
+              <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, maxHeight: 180, overflow: "auto", background: "var(--black-04)", padding: 8, margin: "6px 0 0" }}>{String((f.ocr as { raw_text?: string }).raw_text ?? tr("(sem texto)", "(no text)"))}</pre>
             </details>
           )}
-          <div className="issues">{issues.length ? issues.map((i, k) => <div key={k} className={i.lv}>{i.msg}</div>) : <div className="ok">Sem alertas</div>}</div>
+          <div className="issues">{issues.length ? issues.map((i, k) => <div key={k} className={i.lv}>{i.msg}</div>) : <div className="ok">{tr("Sem alertas", "No alerts")}</div>}</div>
         </div>
         <div className="form">
           <div className="row2">
-            <Field label="Data do recibo" ocr={ocr.date} hint="A data que aparece no recibo"><input className="in" type="date" max={app.today} value={f.receipt_date ?? ""} onChange={(e) => set("receipt_date", e.target.value || null)} /></Field>
-            <Field label="NIF no recibo" ocr={ocr.nif} hint={isNifNA(f.nif) ? "Recibo sem NIF (N/A)" : rc.company ? `Deve ser ${rc.company.nif}` : undefined}><input className="in" value={f.nif ?? ""} disabled={isNifNA(f.nif)} placeholder="NIF do adquirente" onChange={(e) => set("nif", e.target.value)} /></Field>
+            <Field label={tr("Data do recibo", "Receipt date")} ocr={ocr.date} hint={tr("A data que aparece no recibo", "The date shown on the receipt")}><input className="in" type="date" max={app.today} value={f.receipt_date ?? ""} onChange={(e) => set("receipt_date", e.target.value || null)} /></Field>
+            <Field label={tr("NIF no recibo", "VAT number (NIF) on receipt")} ocr={ocr.nif} hint={isNifNA(f.nif) ? tr("Recibo sem NIF (N/A)", "Receipt without VAT number (N/A)") : rc.company ? tr(`Deve ser ${rc.company.nif}`, `Must be ${rc.company.nif}`) : undefined}><input className="in" value={f.nif ?? ""} disabled={isNifNA(f.nif)} placeholder={tr("NIF do adquirente", "Buyer VAT number")} onChange={(e) => set("nif", e.target.value)} /></Field>
           </div>
-          <label className="cb"><input type="checkbox" checked={isNifNA(f.nif)} onChange={(e) => set("nif", e.target.checked ? NIF_NA : "")} /> O recibo não tem NIF (N/A) — ex.: compra num site estrangeiro que não pede NIF</label>
-          <Field label="Designação comercial (client)" ocr={ocr.client} hint="Nome do restaurante, hotel, loja…"><input className="in" value={f.client ?? ""} onChange={(e) => set("client", e.target.value)} /></Field>
-          <Field label="Denominação legal" ocr={ocr.legal} hint="Empresa que emite a fatura (Lda, S.A.…)"><input className="in" value={f.details.legal ?? ""} onChange={(e) => setD("legal", e.target.value)} /></Field>
+          <label className="cb"><input type="checkbox" checked={isNifNA(f.nif)} onChange={(e) => set("nif", e.target.checked ? NIF_NA : "")} /> {tr("O recibo não tem NIF (N/A) — ex.: compra num site estrangeiro que não pede NIF", "The receipt has no VAT number (N/A) — e.g. purchase on a foreign website that does not ask for one")}</label>
+          <Field label={tr("Designação comercial (client)", "Trading name (client)")} ocr={ocr.client} hint={tr("Nome do restaurante, hotel, loja…", "Name of the restaurant, hotel, shop…")}><input className="in" value={f.client ?? ""} onChange={(e) => set("client", e.target.value)} /></Field>
+          <Field label={tr("Denominação legal", "Legal name")} ocr={ocr.legal} hint={tr("Empresa que emite a fatura (Lda, S.A.…)", "Company issuing the invoice (Lda, S.A.…)")}><input className="in" value={f.details.legal ?? ""} onChange={(e) => setD("legal", e.target.value)} /></Field>
           <div className="row3">
-            <Field label="Com IVA" ocr={ocr.incl}><input className="in num" type="number" step="0.01" min="0" value={f.incl ?? ""} onChange={(e) => set("incl", numOrNull(e.target.value))} /></Field>
-            <Field label="Sem IVA" ocr={ocr.excl} hint={noVat ? "IVA = 0" : Number(f.excl) ? `IVA ${eur(vat)} · ${rate.toFixed(0)} %` : undefined}><input className="in num" type="number" step="0.01" min="0" disabled={noVat} value={(noVat ? f.incl : f.excl) ?? ""} onChange={(e) => set("excl", numOrNull(e.target.value))} /></Field>
-            <Field label="Moeda"><select className="in" value={f.currency} onChange={(e) => set("currency", e.target.value as Currency)}><option>EUR</option><option>GBP</option></select></Field>
+            <Field label={tr("Com IVA", "Incl. VAT")} ocr={ocr.incl}><input className="in num" type="number" step="0.01" min="0" value={f.incl ?? ""} onChange={(e) => set("incl", numOrNull(e.target.value))} /></Field>
+            <Field label={tr("Sem IVA", "Excl. VAT")} ocr={ocr.excl} hint={noVat ? tr("IVA = 0", "VAT = 0") : Number(f.excl) ? `${tr("IVA", "VAT")} ${eur(vat)} · ${rate.toFixed(0)} %` : undefined}><input className="in num" type="number" step="0.01" min="0" disabled={noVat} value={(noVat ? f.incl : f.excl) ?? ""} onChange={(e) => set("excl", numOrNull(e.target.value))} /></Field>
+            <Field label={tr("Moeda", "Currency")}><select className="in" value={f.currency} onChange={(e) => set("currency", e.target.value as Currency)}><option>EUR</option><option>GBP</option></select></Field>
           </div>
-          <label className="cb"><input type="checkbox" checked={noVat} onChange={(e) => setNoVat(e.target.checked)} /> O recibo não discrimina IVA</label>
-          {f.currency !== "EUR" && <Field label="Câmbio para EUR" hint="Taxa da data do recibo"><input className="in num" type="number" step="0.0001" value={f.rate} onChange={(e) => set("rate", Number(e.target.value))} /></Field>}
-          <Field label="Tipo de despesa" hint={f.type ? TYPES[f.type].hint : "Escolha o tipo e depois a subcategoria"}>
+          <label className="cb"><input type="checkbox" checked={noVat} onChange={(e) => setNoVat(e.target.checked)} /> {tr("O recibo não discrimina IVA", "The receipt does not show VAT separately")}</label>
+          {f.currency !== "EUR" && <Field label={tr("Câmbio para EUR", "Exchange rate to EUR")} hint={tr("Taxa da data do recibo", "Rate on the receipt date")}><input className="in num" type="number" step="0.0001" value={f.rate} onChange={(e) => set("rate", Number(e.target.value))} /></Field>}
+          <Field label={tr("Tipo de despesa", "Expense type")} hint={f.type ? TYPES[f.type].hint : tr("Escolha o tipo e depois a subcategoria", "Choose the type and then the subcategory")}>
             <Seg options={TYPE_KEYS.map((k) => ({ v: k, l: TYPES[k].short }))} value={f.type} onChange={(v) => setF((p) => { const t = v as ExpType; return { ...p, type: t, sub: p.sub && TYPES[t].subs.includes(p.sub) ? p.sub : null }; })} />
           </Field>
           {f.type && (
-            <Field label="Subcategoria (for accountancy)" hint={f.sub === "Others travel expenses" ? "Só para estacionamento, metro, táxi, autocarro, portagens" : undefined}>
+            <Field label={tr("Subcategoria (for accountancy)", "Subcategory (for accountancy)")} hint={f.sub === "Others travel expenses" ? tr("Só para estacionamento, metro, táxi, autocarro, portagens", "Only for parking, metro, taxi, bus, tolls") : undefined}>
               <div className="opts">{TYPES[f.type].subs.map((s) => <button type="button" key={s} className={f.sub === s ? "on" : ""} onClick={() => set("sub", s)}>{s}</button>)}</div>
-              {sug && f.type && <div className="hint warn">“{f.client}” parece ser {sug}. <button className="link-button" onClick={() => { const t = f.type; if (t) set("sub", TYPES[t].subs.find((x) => x.startsWith(sug)) ?? f.sub); }}>Mudar</button></div>}
+              {sug && f.type && <div className="hint warn">“{f.client}” {tr("parece ser", "looks like")} {sug}. <button className="link-button" onClick={() => { const t = f.type; if (t) set("sub", TYPES[t].subs.find((x) => x.startsWith(sug)) ?? f.sub); }}>{tr("Mudar", "Change")}</button></div>}
             </Field>
           )}
           {schema.map((fl) => {
-            if (fl.kind === "seg") return <Field key={fl.k} label={fl.label}><div className="opts">{(fl.options ?? []).map((o) => <button type="button" key={o} className={f.details[fl.k] === o ? "on" : ""} onClick={() => setD(fl.k as "kind", o)}>{o}</button>)}</div></Field>;
+            if (fl.kind === "seg") return <Field key={fl.k} label={fl.label}><div className="opts">{(fl.options ?? []).map((o) => <button type="button" key={o} className={f.details[fl.k] === o ? "on" : ""} onClick={() => setD(fl.k as "kind", o)}>{optionLabel(o)}</button>)}</div></Field>;
             if (fl.kind === "int") return <Field key={fl.k} label={fl.label}><input className="in num" style={{ maxWidth: 120 }} type="number" min="1" value={f.details.people ?? ""} onChange={(e) => setD("people", e.target.value)} /></Field>;
             if (fl.kind === "people") return <People key={fl.k} list={f.details.participants ?? []} external={f.details.invite === "External"} onChange={(v) => setD("participants", v)} />;
             const val = f.details[fl.k];
             return <Field key={fl.k} label={fl.label}><input className="in" placeholder={fl.ph} value={typeof val === "string" ? val : ""} onChange={(e) => setD(fl.k as "motivo", e.target.value)} /></Field>;
           })}
-          {f.sub === "Restaurants" && f.details.invite === "External" && <div className="hint warn">Escreva também no verso do recibo físico o nome e a empresa de cada participante externo.</div>}
-          {f.sub && <div className="preview"><span className="lab">Details que irá para o Excel</span>{detailText(f.sub, f.details)}</div>}
+          {f.sub === "Restaurants" && f.details.invite === "External" && <div className="hint warn">{tr("Escreva também no verso do recibo físico o nome e a empresa de cada participante externo.", "Also write the name and company of each external participant on the back of the paper receipt.")}</div>}
+          {f.sub && <div className="preview"><span className="lab">{tr("Details que irá para o Excel", "Details that will go to the Excel")}</span>{detailText(f.sub, f.details)}</div>}
         </div>
       </div>
     </Modal>
@@ -237,16 +238,16 @@ export function ReceiptModal({ claim, line, onClose }: { claim: Claim; line: Lin
 function People({ list, external, onChange }: { list: Participant[]; external: boolean; onChange: (v: Participant[]) => void }) {
   const upd = (i: number, k: keyof Participant, v: string) => onChange(list.map((p, j) => (j === i ? { ...p, [k]: v } : p)));
   return (
-    <Field label={`Participantes · ${list.length}`} hint={external ? "Para externos indique a empresa" : "Nomes ou iniciais de todas as pessoas presentes"}>
+    <Field label={`${tr("Participantes", "Participants")} · ${list.length}`} hint={external ? tr("Para externos indique a empresa", "For external participants enter the company") : tr("Nomes ou iniciais de todas as pessoas presentes", "Names or initials of everyone present")}>
       <div className="people">
         {list.map((p, i) => (
           <div key={i} className="prow">
-            <input className="in" placeholder="Nome" value={p.name} onChange={(e) => upd(i, "name", e.target.value)} />
-            <input className="in" placeholder={external ? "Empresa (externo)" : "Empresa (se externo)"} value={p.company ?? ""} onChange={(e) => upd(i, "company", e.target.value)} />
-            <button type="button" className="link-button" aria-label="Remover" onClick={() => onChange(list.filter((_, j) => j !== i))}>×</button>
+            <input className="in" placeholder={tr("Nome", "Name")} value={p.name} onChange={(e) => upd(i, "name", e.target.value)} />
+            <input className="in" placeholder={external ? tr("Empresa (externo)", "Company (external)") : tr("Empresa (se externo)", "Company (if external)")} value={p.company ?? ""} onChange={(e) => upd(i, "company", e.target.value)} />
+            <button type="button" className="link-button" aria-label={tr("Remover", "Remove")} onClick={() => onChange(list.filter((_, j) => j !== i))}>×</button>
           </div>
         ))}
-        <button type="button" className="link-button" onClick={() => onChange([...list, { name: "" }])}>+ Adicionar participante</button>
+        <button type="button" className="link-button" onClick={() => onChange([...list, { name: "" }])}>{tr("+ Adicionar participante", "+ Add participant")}</button>
       </div>
     </Field>
   );

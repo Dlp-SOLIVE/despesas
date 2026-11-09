@@ -8,6 +8,7 @@ import { Chip, Empty, FilePreview, Kpis, Thumb, Timeline, askConfirm, useApp } f
 import { ClaimHeader, DownloadBtns, NewClaimModal, canEdit, myClaim, ruleCtx, vehicleFor } from "./common";
 import { ReceiptModal, applyRead, blankLine } from "./Receipt";
 import { SubmitModal } from "./Submit";
+import { getLang, tr } from "../lib/i18n";
 
 export function MonthView() {
   const app = useApp();
@@ -24,8 +25,8 @@ export function MonthView() {
   if (!claim)
     return (
       <div className="app-body">
-        <Empty title={`Ainda não tem pedido para ${periodLabel(period).toLowerCase()}`} action={<button className="btn primary" onClick={() => setNc(true)}>Iniciar pedido</button>}>
-          Registe os recibos ao longo do mês e submeta quando estiver completo.
+        <Empty title={tr(`Ainda não tem pedido para ${periodLabel(period).toLowerCase()}`, `You have no claim for ${periodLabel(period)} yet`)} action={<button className="btn primary" onClick={() => setNc(true)}>{tr("Iniciar pedido", "Start claim")}</button>}>
+          {tr("Registe os recibos ao longo do mês e submeta quando estiver completo.", "Add your receipts during the month and submit when it is complete.")}
         </Empty>
         {nc && <NewClaimModal period={period} onClose={() => setNc(false)} />}
       </div>
@@ -44,13 +45,13 @@ export function MonthView() {
     if (!claim || !list || !list.length) return;
     const free = s.max_lines - claim.lines.length;
     const files = [...list].slice(0, free);
-    if (list.length > free) app.toast(`Só cabem mais ${free} recibos neste pedido (máximo ${s.max_lines}). Os restantes não foram carregados.`, "err");
+    if (list.length > free) app.toast(tr(`Só cabem mais ${free} recibos neste pedido (máximo ${s.max_lines}). Os restantes não foram carregados.`, `Only ${free} more receipts fit in this claim (maximum ${s.max_lines}). The rest were not uploaded.`), "err");
     const big = files.filter((f) => f.size > 10 * 1024 * 1024);
     let no = claim.lines.length;
     let ok = 0;
     for (const [i, file] of files.entries()) {
       if (big.includes(file)) continue;
-      setBulk(`A ler recibo ${i + 1} de ${files.length}…`);
+      setBulk(tr(`A ler recibo ${i + 1} de ${files.length}…`, `Reading receipt ${i + 1} of ${files.length}…`));
       try {
         const up = await uploadReceipt(file, app.me.id, claim.id);
         let line: LineInput = { ...blankLine(++no), file_path: up.path, file_type: up.type };
@@ -70,11 +71,11 @@ export function MonthView() {
     if (multiRef.current) multiRef.current.value = "";
     await app.reload();
     app.log(`Carregou ${ok} recibos · ${claim.cost_center} ${claim.period}`);
-    app.toast(`${ok} recibo(s) adicionados${big.length ? ` · ${big.length} acima de 10 MB ignorado(s)` : ""}. Abra cada um para confirmar e completar (tipo, Details).`);
+    app.toast(tr(`${ok} recibo(s) adicionados${big.length ? ` · ${big.length} acima de 10 MB ignorado(s)` : ""}. Abra cada um para confirmar e completar (tipo, Details).`, `${ok} receipt(s) added${big.length ? ` · ${big.length} over 10 MB skipped` : ""}. Open each one to check and complete it (type, Details).`));
   }
 
   async function del(l: Line) {
-    if (!claim || !(await askConfirm(`Apagar o recibo nº ${l.no}? A imagem também é apagada.`))) return;
+    if (!claim || !(await askConfirm(tr(`Apagar o recibo nº ${l.no}? A imagem também é apagada.`, `Delete receipt no. ${l.no}? The image will also be deleted.`)))) return;
     try {
       await deleteLine(claim, l);
       app.log(`Apagou recibo ${l.no} · ${claim.cost_center} ${claim.period}`);
@@ -86,33 +87,33 @@ export function MonthView() {
 
   return (
     <div className="app-body">
-      <ClaimHeader claim={claim} eyebrow="Pedido de reembolso" actions={ed ? (
+      <ClaimHeader claim={claim} eyebrow={tr("Pedido de reembolso", "Expense claim")} actions={ed ? (
         <>
-          {claim.period === period && <button className="btn" onClick={() => setNc(true)}>Outro cost center</button>}
-          {(app.me.uses_km || claim.trips.length > 0) && <button className="btn" onClick={() => app.go("km", claim.id)}>Quilómetros</button>}
-          <button className="btn" disabled={!!bulk || claim.lines.length >= s.max_lines} onClick={() => multiRef.current?.click()}>{bulk ?? "Carregar vários"}</button>
+          {claim.period === period && <button className="btn" onClick={() => setNc(true)}>{tr("Outro cost center", "Another cost center")}</button>}
+          {(app.me.uses_km || claim.trips.length > 0) && <button className="btn" onClick={() => app.go("km", claim.id)}>{tr("Quilómetros", "Mileage")}</button>}
+          <button className="btn" disabled={!!bulk || claim.lines.length >= s.max_lines} onClick={() => multiRef.current?.click()}>{bulk ?? tr("Carregar vários", "Upload several")}</button>
           <input ref={multiRef} type="file" multiple accept="image/*,application/pdf" hidden onChange={(e) => void addMany(e.target.files)} />
-          <button className="btn primary" disabled={!!bulk || claim.lines.length >= s.max_lines} onClick={() => setEdit("new")}>Adicionar recibo</button>
+          <button className="btn primary" disabled={!!bulk || claim.lines.length >= s.max_lines} onClick={() => setEdit("new")}>{tr("Adicionar recibo", "Add receipt")}</button>
         </>
       ) : undefined} />
       {claim.status === "returned" && (
-        <div className="notice err-n"><Chip tone="err">Devolvido</Chip><span><b>{lastReturn?.comment}</b> As linhas assinaladas têm um comentário do aprovador.</span></div>
+        <div className="notice err-n"><Chip tone="err">{tr("Devolvido", "Returned")}</Chip><span><b>{lastReturn?.comment}</b> {tr("As linhas assinaladas têm um comentário do aprovador.", "The flagged lines have a comment from the approver.")}</span></div>
       )}
       {ed && (
         <div className="notice">
-          <Chip tone={ck.ready ? "ok" : "info"}>{claim.status === "returned" ? "A corrigir" : "Rascunho"}</Chip>
-          <span>{ck.ready ? <>Tudo conforme. <b>Pode submeter.</b></> : <>Faltam resolver <b>{pending} ponto{pending === 1 ? "" : "s"}</b> da checklist{errLines ? <>, incluindo {errLines} recibo{errLines === 1 ? "" : "s"} com erros</> : null}.</>}</span>
-          <span className="push"><button className="btn dark" onClick={() => setSubmit(true)}>Rever e submeter</button></span>
+          <Chip tone={ck.ready ? "ok" : "info"}>{claim.status === "returned" ? tr("A corrigir", "To correct") : tr("Rascunho", "Draft")}</Chip>
+          <span>{ck.ready ? <>{tr("Tudo conforme.", "All compliant.")} <b>{tr("Pode submeter.", "You can submit.")}</b></> : getLang() === "en" ? <><b>{pending} checklist point{pending === 1 ? "" : "s"}</b> still to resolve{errLines ? <>, including {errLines} receipt{errLines === 1 ? "" : "s"} with errors</> : null}.</> : <>Faltam resolver <b>{pending} ponto{pending === 1 ? "" : "s"}</b> da checklist{errLines ? <>, incluindo {errLines} recibo{errLines === 1 ? "" : "s"} com erros</> : null}.</>}</span>
+          <span className="push"><button className="btn dark" onClick={() => setSubmit(true)}>{tr("Rever e submeter", "Review and submit")}</button></span>
         </div>
       )}
       {!ed && (
-        <div className="notice"><span>Pedido fechado para edição. {claim.status === "posted" ? `Pago${claim.paid_on ? ` a ${fmtDate(claim.paid_on)}` : ""}.` : "Em aprovação."}</span><span className="push actions"><DownloadBtns claim={claim} /></span></div>
+        <div className="notice"><span>{tr("Pedido fechado para edição.", "Claim closed for editing.")} {claim.status === "posted" ? `${tr("Pago", "Paid")}${claim.paid_on ? ` ${tr("a", "on")} ${fmtDate(claim.paid_on)}` : ""}.` : tr("Em aprovação.", "In approval.")}</span><span className="push actions"><DownloadBtns claim={claim} /></span></div>
       )}
       <Kpis t={t} />
       {claim.lines.length ? (
         <div className="tbl-wrap">
           <table>
-            <thead><tr><th>No</th><th></th><th>Data</th><th>Despesa</th><th>Details</th><th>Client</th><th className="num">Incl. VAT</th><th>Estado</th>{ed && <th></th>}</tr></thead>
+            <thead><tr><th>No</th><th></th><th>{tr("Data", "Date")}</th><th>{tr("Despesa", "Expense")}</th><th>Details</th><th>Client</th><th className="num">Incl. VAT</th><th>{tr("Estado", "Status")}</th>{ed && <th></th>}</tr></thead>
             <tbody>
               {claim.lines.map((l) => {
                 const is = lineIssues(l, rc);
@@ -125,11 +126,11 @@ export function MonthView() {
                     <td onClick={(ev) => ev.stopPropagation()}><Thumb path={l.file_path} type={l.file_type} onClick={() => setPrev(l)} /></td>
                     <td className="nw">{fmtDate(l.receipt_date)}</td>
                     <td>{l.sub ?? <span className="muted">—</span>}<div className="cat">{l.type ? TYPES[l.type].label : ""}</div></td>
-                    <td className="wide">{detailText(l.sub, l.details)}{l.approver_note && <div className="note-line">Aprovador: {l.approver_note}</div>}</td>
+                    <td className="wide">{detailText(l.sub, l.details)}{l.approver_note && <div className="note-line">{tr("Aprovador", "Approver")}: {l.approver_note}</div>}</td>
                     <td>{l.client}{l.details?.legal && <div className="cat">{l.details.legal}</div>}</td>
                     <td className="num">{lineEUR(l).toLocaleString("de-DE", { minimumFractionDigits: 2 })} €{l.currency !== "EUR" && <div className="cat">{l.incl} {l.currency}</div>}</td>
-                    <td>{e ? <Chip tone="err" title={all}>{e.msg}</Chip> : w ? <Chip tone="warn" title={all}>{w.msg}</Chip> : <Chip tone="ok">Conforme</Chip>}{is.length > 1 && <div className="cat">+{is.length - 1} alerta{is.length > 2 ? "s" : ""}</div>}</td>
-                    {ed && <td><button className="link-button" onClick={(ev) => { ev.stopPropagation(); void del(l); }}>Apagar</button></td>}
+                    <td>{e ? <Chip tone="err" title={all}>{e.msg}</Chip> : w ? <Chip tone="warn" title={all}>{w.msg}</Chip> : <Chip tone="ok">{tr("Conforme", "Compliant")}</Chip>}{is.length > 1 && <div className="cat">+{is.length - 1} {tr("alerta", "alert")}{is.length > 2 ? "s" : ""}</div>}</td>
+                    {ed && <td><button className="link-button" onClick={(ev) => { ev.stopPropagation(); void del(l); }}>{tr("Apagar", "Delete")}</button></td>}
                   </tr>
                 );
               })}
@@ -137,12 +138,12 @@ export function MonthView() {
           </table>
         </div>
       ) : (
-        <Empty title="Sem recibos neste pedido" action={ed ? <button className="btn primary" onClick={() => setEdit("new")}>Adicionar o primeiro recibo</button> : undefined}>
-          Fotografe cada recibo no momento da despesa. A numeração é automática.
+        <Empty title={tr("Sem recibos neste pedido", "No receipts in this claim")} action={ed ? <button className="btn primary" onClick={() => setEdit("new")}>{tr("Adicionar o primeiro recibo", "Add the first receipt")}</button> : undefined}>
+          {tr("Fotografe cada recibo no momento da despesa. A numeração é automática.", "Take a photo of each receipt when you incur the expense. Numbering is automatic.")}
         </Empty>
       )}
       {claim.history.length > 0 && (
-        <div style={{ marginTop: 32 }}><div className="eyebrow" style={{ marginBottom: 8 }}>Histórico do pedido</div><Timeline claim={claim} people={app.refs.people} /></div>
+        <div style={{ marginTop: 32 }}><div className="eyebrow" style={{ marginBottom: 8 }}>{tr("Histórico do pedido", "Claim history")}</div><Timeline claim={claim} people={app.refs.people} /></div>
       )}
       {edit && <ReceiptModal claim={claim} line={edit === "new" ? null : edit} onClose={() => setEdit(null)} />}
       {prev && prev.file_path && <FilePreview path={prev.file_path} type={prev.file_type} onClose={() => setPrev(null)} />}
