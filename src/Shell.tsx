@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Claim, FavTrip, Person, Refs, Vehicle } from "./types";
-import { audit, loadClaims, loadFavs, loadRefs, loadVehicle } from "./lib/data";
+import { audit, loadClaims, loadFavs, loadRefs, loadVehicle, syncLang } from "./lib/data";
 import { isoToday, initials } from "./lib/format";
 import { ROLES } from "./lib/rules";
 import { AppContext, DialogHost, LangToggle, type AppCtx, type View } from "./ui";
-import { tr, trServer, useLang } from "./lib/i18n";
+import { getLang, hasLangChoice, setLang, tr, trServer, useLang } from "./lib/i18n";
 import { MonthView } from "./views/Month";
 import { KmView } from "./views/Km";
 import { HistoryView, ProfileView } from "./views/History";
@@ -70,6 +70,24 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // Língua dos emails: a escolha PT/EN fica também no perfil (a função exp-notify usa-a).
+  // Num browser sem escolha feita, adota a língua do perfil. Falhas (ex.: SQL por correr) são ignoradas.
+  const langSynced = useRef(false);
+  useEffect(() => {
+    const chosen = hasLangChoice();
+    syncLang(chosen ? getLang() : null)
+      .then((saved) => {
+        if (!chosen && saved) setLang(saved);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        langSynced.current = true;
+      });
+  }, []);
+  useEffect(() => {
+    if (langSynced.current) void syncLang(lang).catch(() => undefined);
+  }, [lang]);
 
 
   const toast = useCallback((text: string, kind: "ok" | "err" = "ok") => {

@@ -7,6 +7,10 @@ chama a Edge Function `exp-notify`, que envia pelo **Gmail** (como a plataforma 
 Quando o manager **aprova** o pedido, o **colaborador** recebe um email «Pedido de … aprovado», com quem aprovou,
 o resumo e o botão **Ver o pedido** (responder vai para o manager).
 
+**Língua:** cada email sai na língua que o destinatário escolheu na plataforma (botões PT / EN), guardada no
+perfil (`exp_profiles.lang`, migração `20261111100000_email_idioma.sql`). Quem nunca escolheu recebe em português.
+Valores sempre no formato europeu (1.234,50 €).
+
 - O envio é feito no servidor: não depende do browser de quem submete e as chaves nunca vão para o site.
 - Uma falha no email **nunca** impede a submissão.
 - Cada envio (ou falha) fica no **Audit log**: «Email enviado a …» / «Falhou o email a …».

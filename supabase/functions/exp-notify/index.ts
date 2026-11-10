@@ -2,6 +2,7 @@
 // Emails automáticos dos pedidos de despesas (Gmail ou Resend, como nas Entregas):
 //   event "submitted" → ao manager: pedido submetido, aguarda aprovação
 //   event "approved"  → ao colaborador: pedido aprovado pelo manager
+// Língua: a do destinatário (exp_profiles.lang, gravada pela plataforma quando escolhe PT/EN); por defeito PT.
 // É chamada pela base de dados (trigger exp_claims_notify, migração 20261110180000_email_aprovado.sql),
 // nunca pelo browser. Publicar com «Verify JWT» DESLIGADO: a proteção é o segredo partilhado.
 // Segredos (Supabase → Edge Functions → Secrets):
@@ -38,14 +39,67 @@ async function sendMail(m: { to: string; replyTo?: string; subject: string; html
   await t.sendMail({ from, to: m.to, replyTo: m.replyTo, subject: m.subject, html: m.html, text: m.text });
 }
 
-const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
-const num1 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+type Lang = "pt" | "en";
+const MONTHS: Record<Lang, string[]> = {
+  pt: ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"],
+  en: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+};
+// Valores sempre no formato europeu da plataforma (1.234,50 €)
+const eurFmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const num1Fmt = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const eur = { format: (v: number) => eurFmt.format(v) };
+const num1 = { format: (v: number) => num1Fmt.format(v) };
 const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-const periodLabel = (p: string) => {
+const periodLabel = (p: string, lang: Lang) => {
   const [y, m] = p.split("-");
-  return `${MONTHS[Number(m) - 1] ?? m} ${y}`;
+  return `${MONTHS[lang][Number(m) - 1] ?? m} ${y}`;
+};
+
+// Textos dos emails (PT / EN)
+const T = {
+  pt: {
+    hello: (n: string) => `Olá ${n},`,
+    submittedIntro: (emp: string) => `<strong>${emp}</strong> submeteu um pedido de reembolso de despesas que aguarda a sua aprovação.`,
+    submittedText: (emp: string) => `${emp} submeteu um pedido de reembolso de despesas que aguarda a sua aprovação.`,
+    approvedIntro: (who: string) => `O seu pedido de reembolso de despesas foi <strong>aprovado</strong> por <strong>${who}</strong>.`,
+    approvedText: (who: string) => `O seu pedido de reembolso de despesas foi aprovado por ${who}.`,
+    yourManager: "o seu manager",
+    submittedFooter: "Pode aprovar ou devolver com comentários em Aprovações.",
+    approvedFooter: "Segue agora para registo pelos RH e, depois, para pagamento.",
+    automatic: "Este email é automático.",
+    submittedSubject: (emp: string, per: string, tot: string) => `Despesas · ${emp} submeteu o pedido de ${per} (${tot})`,
+    approvedSubject: (per: string, tot: string) => `Despesas · Pedido de ${per} aprovado (${tot})`,
+    review: "Rever o pedido",
+    view: "Ver o pedido",
+    month: "Mês",
+    costCenter: "Cost center",
+    receipts: "Recibos",
+    km: "Quilómetros",
+    total: "Total",
+    employee: "Colaborador",
+  },
+  en: {
+    hello: (n: string) => `Hello ${n},`,
+    submittedIntro: (emp: string) => `<strong>${emp}</strong> has submitted an expense claim that is awaiting your approval.`,
+    submittedText: (emp: string) => `${emp} has submitted an expense claim that is awaiting your approval.`,
+    approvedIntro: (who: string) => `Your expense claim has been <strong>approved</strong> by <strong>${who}</strong>.`,
+    approvedText: (who: string) => `Your expense claim has been approved by ${who}.`,
+    yourManager: "your manager",
+    submittedFooter: "You can approve it or return it with comments in Approvals.",
+    approvedFooter: "It now goes to HR to be recorded and then to payment.",
+    automatic: "This is an automatic email.",
+    submittedSubject: (emp: string, per: string, tot: string) => `Expenses · ${emp} submitted the ${per} claim (${tot})`,
+    approvedSubject: (per: string, tot: string) => `Expenses · ${per} claim approved (${tot})`,
+    review: "Review the claim",
+    view: "View the claim",
+    month: "Month",
+    costCenter: "Cost center",
+    receipts: "Receipts",
+    km: "Mileage",
+    total: "Total",
+    employee: "Employee",
+  },
 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -100,6 +154,11 @@ Deno.serve(async (req) => {
     const to = event === "approved" ? owner.data : mgr.data;
     if (event === "submitted" && !managerId) return json({ skipped: "Colaborador sem manager atribuído" });
     if (!to?.email) return json({ skipped: "Destinatário sem email" });
+    const toId = event === "approved" ? claim.staff_member_id : managerId;
+    // Se a coluna lang ainda não existir (SQL por correr), dá erro e fica PT
+    const langRow = await sb.from("exp_profiles").select("lang").eq("staff_member_id", toId).maybeSingle();
+    const lang: Lang = !langRow.error && (langRow.data as { lang?: string } | null)?.lang === "en" ? "en" : "pt";
+    const L = T[lang];
 
     // Mesmas contas que claimTotals (src/lib/rules.ts)
     const receipts = (lines.data ?? []).reduce((a, l) => {
@@ -113,50 +172,45 @@ Deno.serve(async (req) => {
 
     const appUrl = (Deno.env.get("APP_URL") ?? "https://legendrept-expenses.netlify.app").replace(/\/+$/, "");
     const link = `${appUrl}/?pedido=${encodeURIComponent(claim.id)}`;
-    const employee = owner.data?.full_name ?? "Colaborador";
-    const period = periodLabel(claim.period);
+    const employee = owner.data?.full_name ?? L.employee;
+    const period = periodLabel(claim.period, lang);
     const ccText = cc.data?.label ? `${claim.cost_center} · ${cc.data.label}` : claim.cost_center;
 
-    const approverName = approver?.full_name ?? "o seu manager";
-    const intro = event === "approved"
-      ? `O seu pedido de reembolso de despesas foi <strong>aprovado</strong> por <strong>${esc(approverName)}</strong>.`
-      : `<strong>${esc(employee)}</strong> submeteu um pedido de reembolso de despesas que aguarda a sua aprovação.`;
-    const introText = event === "approved"
-      ? `O seu pedido de reembolso de despesas foi aprovado por ${approverName}.`
-      : `${employee} submeteu um pedido de reembolso de despesas que aguarda a sua aprovação.`;
-    const footer = event === "approved"
-      ? "Segue agora para registo pelos RH e, depois, para pagamento."
-      : "Pode aprovar ou devolver com comentários em Aprovações.";
+    const approverName = approver?.full_name ?? L.yourManager;
+    const intro = event === "approved" ? L.approvedIntro(esc(approverName)) : L.submittedIntro(esc(employee));
+    const introText = event === "approved" ? L.approvedText(approverName) : L.submittedText(employee);
+    const footer = event === "approved" ? L.approvedFooter : L.submittedFooter;
     const subject = event === "approved"
-      ? `Despesas · Pedido de ${period} aprovado (${eur.format(total)})`
-      : `Despesas · ${employee} submeteu o pedido de ${period} (${eur.format(total)})`;
+      ? L.approvedSubject(period, eur.format(total))
+      : L.submittedSubject(employee, period, eur.format(total));
+    const button = event === "approved" ? L.view : L.review;
     const replyTo = event === "approved" ? mgr.data?.email : owner.data?.email;
 
     const row = (k: string, v: string) =>
       `<tr><td style="color:#777;padding:4px 16px 4px 0">${k}</td><td style="padding:4px 0">${v}</td></tr>`;
     const html = `
-<div style="font-family:Arial,Helvetica,sans-serif;background:#f4f4f4;padding:24px 0">
+<div lang="${lang === "en" ? "en" : "pt-PT"}" style="font-family:Arial,Helvetica,sans-serif;background:#f4f4f4;padding:24px 0">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e3e3e3">
     <tr><td style="background:#1d1d1b;color:#ffffff;padding:16px 24px;font-size:15px;letter-spacing:2px;font-weight:bold">LEGENDRE · DESPESAS</td></tr>
     <tr><td style="padding:24px;color:#1d1d1b;font-size:14px;line-height:1.5">
-      <p style="margin:0 0 12px">Olá ${esc(to.full_name)},</p>
+      <p style="margin:0 0 12px">${esc(L.hello(to.full_name))}</p>
       <p style="margin:0 0 16px">${intro}</p>
       <table role="presentation" cellspacing="0" cellpadding="0" style="font-size:14px;margin:0 0 20px">
-        ${row("Mês", `<strong>${esc(period)}</strong>`)}
-        ${row("Cost center", esc(ccText))}
-        ${row("Recibos", `${(lines.data ?? []).length} · ${esc(eur.format(receipts))}`)}
-        ${row("Quilómetros", `${esc(num1.format(km))} km · ${esc(eur.format(kmEUR))}`)}
-        ${row("Total", `<strong>${esc(eur.format(total))}</strong>`)}
+        ${row(L.month, `<strong>${esc(period)}</strong>`)}
+        ${row(L.costCenter, esc(ccText))}
+        ${row(L.receipts, `${(lines.data ?? []).length} · ${esc(eur.format(receipts))}`)}
+        ${row(L.km, `${esc(num1.format(km))} km · ${esc(eur.format(kmEUR))}`)}
+        ${row(L.total, `<strong>${esc(eur.format(total))}</strong>`)}
       </table>
-      <p style="margin:0 0 24px"><a href="${esc(link)}" style="background:#e30613;color:#ffffff;text-decoration:none;padding:10px 18px;font-weight:bold;display:inline-block">${event === "approved" ? "Ver o pedido" : "Rever o pedido"}</a></p>
-      <p style="margin:0;color:#777;font-size:12px">${esc(footer)} Este email é automático.</p>
+      <p style="margin:0 0 24px"><a href="${esc(link)}" style="background:#e30613;color:#ffffff;text-decoration:none;padding:10px 18px;font-weight:bold;display:inline-block">${esc(button)}</a></p>
+      <p style="margin:0;color:#777;font-size:12px">${esc(footer)} ${esc(L.automatic)}</p>
     </td></tr>
   </table>
 </div>`;
     const text =
-      `Olá ${to.full_name},\n\n${introText}\n\n` +
-      `Mês: ${period}\nCost center: ${ccText}\nRecibos: ${(lines.data ?? []).length} · ${eur.format(receipts)}\n` +
-      `Quilómetros: ${num1.format(km)} km · ${eur.format(kmEUR)}\nTotal: ${eur.format(total)}\n\n${footer}\n\n${event === "approved" ? "Ver o pedido" : "Rever o pedido"}: ${link}\n`;
+      `${L.hello(to.full_name)}\n\n${introText}\n\n` +
+      `${L.month}: ${period}\n${L.costCenter}: ${ccText}\n${L.receipts}: ${(lines.data ?? []).length} · ${eur.format(receipts)}\n` +
+      `${L.km}: ${num1.format(km)} km · ${eur.format(kmEUR)}\n${L.total}: ${eur.format(total)}\n\n${footer}\n\n${button}: ${link}\n`;
 
     let errMsg = "";
     try {
@@ -174,7 +228,7 @@ Deno.serve(async (req) => {
     await sb.from("exp_audit").insert({
       actor_id: null,
       action: ok
-        ? `Email (${event === "approved" ? "aprovado" : "submetido"}) enviado a ${to.full_name} (pedido ${claim.period} · ${claim.cost_center})`
+        ? `Email (${event === "approved" ? "aprovado" : "submetido"}, ${lang.toUpperCase()}) enviado a ${to.full_name} (pedido ${claim.period} · ${claim.cost_center})`
         : `Falhou o email (${event === "approved" ? "aprovado" : "submetido"}) a ${to.full_name} (pedido ${claim.period} · ${claim.cost_center}): ${errMsg.slice(0, 300)}`,
     });
     return json(ok ? { sent: true } : { error: errMsg }, ok ? 200 : 502);

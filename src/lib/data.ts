@@ -210,6 +210,12 @@ export async function upsertCostCenter(cc: CostCenter, isNew: boolean) {
 export async function updateProfile(staffId: string, patch: Partial<Pick<Person, "role" | "manager_id" | "company_id" | "matricula" | "active" | "uses_km">>) {
   check(await sb().from("exp_profiles").update(patch).eq("staff_member_id", staffId));
 }
+/** Língua dos emails: grava (pt/en) ou só lê (null). Devolve a língua guardada no perfil. */
+export async function syncLang(l: "pt" | "en" | null): Promise<"pt" | "en" | null> {
+  const res = await sb().rpc("exp_sync_lang", { p_lang: l });
+  if (res.error) throw new Error(res.error.message);
+  return res.data === "en" || res.data === "pt" ? res.data : null;
+}
 export async function updateSettings(patch: Partial<Settings>) {
   check(await sb().from("exp_settings").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", 1));
 }
