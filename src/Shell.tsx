@@ -23,6 +23,12 @@ export function Shell({ me: initialMe, onSignOut }: { me: Person; onSignOut: () 
   const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<{ id: number; text: string; kind: "ok" | "err" }[]>([]);
   const [ui, setUi] = useState<{ view: View; selId: string | null }>(() => {
+    // Ligação do email: ?pedido=<id> abre a revisão desse pedido
+    const linked = new URLSearchParams(window.location.search).get("pedido");
+    if (linked) {
+      window.history.replaceState(null, "", window.location.pathname);
+      return { view: "review", selId: linked };
+    }
     try {
       const v = JSON.parse(window.sessionStorage.getItem(UI_KEY) ?? "null") as { view: View; selId: string | null } | null;
       if (v && v.view) return v;
