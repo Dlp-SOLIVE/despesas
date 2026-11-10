@@ -1,8 +1,9 @@
 import { useState } from "react";
 import type { Claim } from "../types";
 import { submitClaim } from "../lib/data";
-import { periodLabel } from "../lib/format";
-import { claimChecklist, packageName } from "../lib/rules";
+import { eur, num1, periodLabel } from "../lib/format";
+import { claimChecklist, claimTotals, packageName } from "../lib/rules";
+import { claimLink, notifyEnabled, notifyManager } from "../lib/notify";
 import { Chip, Modal, useApp } from "../ui";
 import { DownloadBtns, vehicleFor } from "./common";
 import { tr } from "../lib/i18n";
@@ -17,6 +18,24 @@ export function SubmitModal({ claim, onClose }: { claim: Claim; onClose: () => v
     setBusy(true);
     try {
       await submitClaim(claim.id);
+      // Aviso por email ao manager (não bloqueia a submissão)
+      let mailed = false;
+      if (mgr && notifyEnabled) {
+        const t = claimTotals(claim, app.refs.settings);
+        mailed = await notifyManager({
+          to_email: mgr.email,
+          to_name: mgr.full_name,
+          employee: owner?.full_name ?? app.me.full_name,
+          period: periodLabel(claim.period),
+          cost_center: claim.cost_center,
+          receipts: claim.lines.length,
+          km: num1(t.km),
+          total: eur(t.total),
+          link: claimLink(claim.id),
+        });
+        app.log(mailed ? `Email enviado a ${mgr.full_name} (pedido ${claim.period} · ${claim.cost_center})` : `Falhou o email a ${mgr.full_name} (pedido ${claim.period} · ${claim.cost_center})`);
+        if (!mailed) app.toast(tr("O pedido foi submetido, mas o email ao manager não foi enviado. Avise-o diretamente.", "The claim was submitted, but the email to your manager was not sent. Let them know directly."), "err");
+      }
       await app.reload();
       app.toast(tr(`Pedido de ${periodLabel(claim.period)} enviado para aprovação de ${mgr?.full_name ?? "manager"}.`, `${periodLabel(claim.period)} claim sent to ${mgr?.full_name ?? "your manager"} for approval.`));
       onClose();
