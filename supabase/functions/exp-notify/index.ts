@@ -1,13 +1,40 @@
 // Edge Function: exp-notify
-// Envia (via Resend) o email ao manager quando um pedido de despesas é submetido.
+// Envia o email ao manager quando um pedido de despesas é submetido (Gmail ou Resend, como nas Entregas).
 // É chamada pela base de dados (trigger exp_claims_notify, migração 20261110120000_email_aprovador.sql),
 // nunca pelo browser. Publicar com «Verify JWT» DESLIGADO: a proteção é o segredo partilhado.
 // Segredos (Supabase → Edge Functions → Secrets):
-//   RESEND_API_KEY   chave da Resend (re_…)
-//   RESEND_FROM      remetente, ex.: Legendre · Despesas <despesas@legendre.pt> (domínio verificado na Resend)
-//   NOTIFY_SECRET    o mesmo texto guardado no Vault com o nome exp_notify_secret
-//   APP_URL          (opcional) por defeito https://legendrept-expenses.netlify.app
+//   NOTIFY_SECRET        o mesmo texto guardado no Vault com o nome exp_notify_secret
+//   MAIL_PROVIDER        gmail (por defeito) ou resend
+//   GMAIL_USER           conta Gmail que envia (ex.: solive.dlp@gmail.com)
+//   GMAIL_APP_PASSWORD   palavra-passe de aplicação dessa conta (16 caracteres)
+//   MAIL_FROM            (opcional) ex.: Legendre · Despesas <solive.dlp@gmail.com>; por defeito GMAIL_USER
+//   RESEND_API_KEY       só com MAIL_PROVIDER=resend (MAIL_FROM tem de ser do domínio verificado)
+//   APP_URL              (opcional) por defeito https://legendrept-expenses.netlify.app
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import nodemailer from "npm:nodemailer@6.9.14";
+
+const env = (k: string) => Deno.env.get(k) ?? "";
+
+/** Envia o email; lança erro com a mensagem do serviço se falhar. */
+async function sendMail(m: { to: string; replyTo?: string; subject: string; html: string; text: string }) {
+  const from = env("MAIL_FROM") || env("GMAIL_USER");
+  if (!from) throw new Error("Email não configurado (GMAIL_USER / MAIL_FROM)");
+  if ((env("MAIL_PROVIDER") || "gmail") === "resend") {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env("RESEND_API_KEY")}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [m.to], reply_to: m.replyTo, subject: m.subject, html: m.html, text: m.text }),
+    });
+    if (!r.ok) throw new Error("Resend: " + (await r.text()));
+    return;
+  }
+  // Gmail: porta 465 (o Supabase bloqueia 25 e 587)
+  const t = nodemailer.createTransport({
+    host: "smtp.gmail.com", port: 465, secure: true,
+    auth: { user: env("GMAIL_USER"), pass: env("GMAIL_APP_PASSWORD") },
+  });
+  await t.sendMail({ from, to: m.to, replyTo: m.replyTo, subject: m.subject, html: m.html, text: m.text });
+}
 
 const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
@@ -101,31 +128,26 @@ Deno.serve(async (req) => {
       `Mês: ${period}\nCost center: ${ccText}\nRecibos: ${(lines.data ?? []).length} · ${eur.format(receipts)}\n` +
       `Quilómetros: ${num1.format(km)} km · ${eur.format(kmEUR)}\nTotal: ${eur.format(total)}\n\nRever o pedido: ${link}\n`;
 
-    const apiKey = Deno.env.get("RESEND_API_KEY");
-    const from = Deno.env.get("RESEND_FROM");
-    if (!apiKey || !from) throw new Error("Resend não configurado (RESEND_API_KEY / RESEND_FROM)");
-
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from,
-        to: [mgr.data.email],
-        reply_to: owner.data?.email || undefined,
+    let errMsg = "";
+    try {
+      await sendMail({
+        to: mgr.data.email,
+        replyTo: owner.data?.email || undefined,
         subject: `Despesas · ${employee} submeteu o pedido de ${period} (${eur.format(total)})`,
         html,
         text,
-      }),
-    });
-    const out = await res.json().catch(() => ({}));
-    const ok = res.ok;
+      });
+    } catch (e) {
+      errMsg = e instanceof Error ? e.message : String(e);
+    }
+    const ok = !errMsg;
     await sb.from("exp_audit").insert({
       actor_id: null,
       action: ok
         ? `Email enviado a ${mgr.data.full_name} (pedido ${claim.period} · ${claim.cost_center})`
-        : `Falhou o email a ${mgr.data.full_name} (pedido ${claim.period} · ${claim.cost_center}): ${(out as { message?: string }).message ?? res.status}`,
+        : `Falhou o email a ${mgr.data.full_name} (pedido ${claim.period} · ${claim.cost_center}): ${errMsg.slice(0, 300)}`,
     });
-    return json(ok ? { sent: true, id: (out as { id?: string }).id } : { error: out }, ok ? 200 : 502);
+    return json(ok ? { sent: true } : { error: errMsg }, ok ? 200 : 502);
   } catch (e) {
     console.error(e);
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);

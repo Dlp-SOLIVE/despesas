@@ -1,7 +1,7 @@
-# Email automático ao aprovador (Supabase + Resend)
+# Email automático ao aprovador (Supabase + Gmail)
 
 Quando um pedido passa a **submetido** (primeira submissão ou nova submissão depois de devolvido), a base de dados
-chama a Edge Function `exp-notify`, que envia pela **Resend** um email ao **manager** do colaborador
+chama a Edge Function `exp-notify`, que envia pelo **Gmail** (como a plataforma de Entregas) um email ao **manager** do colaborador
 (Administração → Utilizadores → coluna Manager) com o resumo e o botão **Rever o pedido**.
 
 - O envio é feito no servidor: não depende do browser de quem submete e as chaves nunca vão para o site.
@@ -11,21 +11,28 @@ chama a Edge Function `exp-notify`, que envia pela **Resend** um email ao **mana
 Ficheiros: `supabase/functions/exp-notify/index.ts`, `supabase/migrations/20261110120000_email_aprovador.sql`,
 `src/views/Submit.tsx` (sem EmailJS).
 
-## 1. Resend (resend.com)
-1. Criar conta → **Domains → Add domain** → domínio da empresa (ex.: `legendre.pt`, ou um subdomínio como
-   `mail.legendre.pt`) → acrescentar no DNS os registos que a Resend indicar (SPF/DKIM) → esperar por **Verified**.
-   Sem domínio verificado, a Resend só envia para o email do dono da conta (serve apenas para testar).
-2. **API Keys → Create API Key** (permissão *Sending access*) → copiar a chave `re_…`.
+## 1. Conta Gmail (sem DNS nem IT)
+Pode usar a mesma conta das Entregas (`solive.dlp@gmail.com`) ou criar uma só para as Despesas.
+1. Conta Google → **Segurança** → ativar a **Verificação em dois passos** (obrigatório para o passo seguinte).
+2. Conta Google → Segurança → **Palavras-passe de aplicações** (ou myaccount.google.com/apppasswords)
+   → nome `Despesas Supabase` → **Criar** → copiar os 16 caracteres (sem espaços).
+   Se usar a conta das Entregas, crie uma palavra-passe nova só para as Despesas: assim pode revogar uma sem afetar a outra.
 
 ## 2. Supabase — segredos da função
-Edge Functions → **Secrets** → acrescentar:
+Projeto **Legendre-Expenses** → Edge Functions → **Secrets** → acrescentar:
 
 | Nome | Valor |
 |---|---|
-| `RESEND_API_KEY` | a chave `re_…` |
-| `RESEND_FROM` | `Legendre · Despesas <despesas@legendre.pt>` (endereço do domínio verificado) |
+| `MAIL_PROVIDER` | `gmail` |
+| `GMAIL_USER` | o endereço Gmail (ex.: `solive.dlp@gmail.com`) |
+| `GMAIL_APP_PASSWORD` | os 16 caracteres do passo 1 |
+| `MAIL_FROM` | opcional: `Legendre · Despesas <solive.dlp@gmail.com>` (o nome que o manager vê) |
 | `NOTIFY_SECRET` | um texto comprido e aleatório inventado por si (ex.: 40 letras/números) |
 | `APP_URL` | opcional; por defeito `https://legendrept-expenses.netlify.app` |
+
+No Gmail, o endereço em `MAIL_FROM` tem de ser o próprio `GMAIL_USER`; só o nome antes do `<…>` pode mudar.
+Mais tarde, se o IT autorizar um domínio na Resend: `MAIL_PROVIDER` = `resend`, `RESEND_API_KEY` = chave `re_…`,
+`MAIL_FROM` = endereço desse domínio. Os segredos mudam sem voltar a publicar a função.
 
 ## 3. Supabase — publicar a função
 Edge Functions → **Deploy a new function** → nome `exp-notify` → colar `supabase/functions/exp-notify/index.ts` → Deploy.
@@ -54,7 +61,7 @@ Se tinha posto variáveis `VITE_EMAILJS_*` no Netlify, podem ser apagadas.
 1. Conta de teste com manager = o seu utilizador; submeter um pedido (janela anónima).
 2. O email chega em segundos; no Audit log aparece «Email enviado a …».
 3. Se não chegar:
-   - Audit log com «Falhou o email…» → a mensagem é da Resend (domínio por verificar, `RESEND_FROM` errado…).
+   - Audit log com «Falhou o email…» → a mensagem é do Gmail («Invalid login» = `GMAIL_USER` ou palavra-passe de aplicação errados).
    - Nada no Audit log → ver as chamadas feitas pela base de dados:
      ```sql
      select status_code, content, error_msg, created from net._http_response order by created desc limit 10;
@@ -62,4 +69,4 @@ Se tinha posto variáveis `VITE_EMAILJS_*` no Netlify, podem ser apagadas.
      `401` = `NOTIFY_SECRET` diferente do Vault (ou «Verify JWT» ligado); `404` = função com outro nome.
    - Edge Functions → `exp-notify` → **Logs**.
 
-Plano gratuito da Resend: 3 000 emails/mês (100 por dia).
+Limite do Gmail: cerca de 500 emails por dia (partilhado com as Entregas se usar a mesma conta).
