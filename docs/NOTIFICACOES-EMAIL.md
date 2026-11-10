@@ -12,11 +12,10 @@ Ficheiros: `supabase/functions/exp-notify/index.ts`, `supabase/migrations/202611
 `src/views/Submit.tsx` (sem EmailJS).
 
 ## 1. Conta Gmail (sem DNS nem IT)
-Pode usar a mesma conta das Entregas (`solive.dlp@gmail.com`) ou criar uma só para as Despesas.
+Conta das Despesas: **`legendre.pt.despesas@gmail.com`**.
 1. Conta Google → **Segurança** → ativar a **Verificação em dois passos** (obrigatório para o passo seguinte).
 2. Conta Google → Segurança → **Palavras-passe de aplicações** (ou myaccount.google.com/apppasswords)
    → nome `Despesas Supabase` → **Criar** → copiar os 16 caracteres (sem espaços).
-   Se usar a conta das Entregas, crie uma palavra-passe nova só para as Despesas: assim pode revogar uma sem afetar a outra.
 
 ## 2. Supabase — segredos da função
 Projeto **Legendre-Expenses** → Edge Functions → **Secrets** → acrescentar:
@@ -24,9 +23,9 @@ Projeto **Legendre-Expenses** → Edge Functions → **Secrets** → acrescentar
 | Nome | Valor |
 |---|---|
 | `MAIL_PROVIDER` | `gmail` |
-| `GMAIL_USER` | o endereço Gmail (ex.: `solive.dlp@gmail.com`) |
+| `GMAIL_USER` | `legendre.pt.despesas@gmail.com` |
 | `GMAIL_APP_PASSWORD` | os 16 caracteres do passo 1 |
-| `MAIL_FROM` | opcional: `Legendre · Despesas <solive.dlp@gmail.com>` (o nome que o manager vê) |
+| `MAIL_FROM` | opcional: `Legendre · Despesas <legendre.pt.despesas@gmail.com>` (o nome que o manager vê) |
 | `NOTIFY_SECRET` | um texto comprido e aleatório inventado por si (ex.: 40 letras/números) |
 | `APP_URL` | opcional; por defeito `https://legendrept-expenses.netlify.app` |
 
@@ -69,4 +68,4 @@ Se tinha posto variáveis `VITE_EMAILJS_*` no Netlify, podem ser apagadas.
      `401` = `NOTIFY_SECRET` diferente do Vault (ou «Verify JWT» ligado); `404` = função com outro nome.
    - Edge Functions → `exp-notify` → **Logs**.
 
-Limite do Gmail: cerca de 500 emails por dia (partilhado com as Entregas se usar a mesma conta).
+Limite do Gmail: cerca de 500 emails por dia.

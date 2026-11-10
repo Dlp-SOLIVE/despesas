@@ -5,9 +5,9 @@
 // Segredos (Supabase → Edge Functions → Secrets):
 //   NOTIFY_SECRET        o mesmo texto guardado no Vault com o nome exp_notify_secret
 //   MAIL_PROVIDER        gmail (por defeito) ou resend
-//   GMAIL_USER           conta Gmail que envia (ex.: solive.dlp@gmail.com)
+//   GMAIL_USER           conta Gmail que envia (legendre.pt.despesas@gmail.com)
 //   GMAIL_APP_PASSWORD   palavra-passe de aplicação dessa conta (16 caracteres)
-//   MAIL_FROM            (opcional) ex.: Legendre · Despesas <solive.dlp@gmail.com>; por defeito GMAIL_USER
+//   MAIL_FROM            (opcional) ex.: Legendre · Despesas <legendre.pt.despesas@gmail.com>; por defeito GMAIL_USER
 //   RESEND_API_KEY       só com MAIL_PROVIDER=resend (MAIL_FROM tem de ser do domínio verificado)
 //   APP_URL              (opcional) por defeito https://legendrept-expenses.netlify.app
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
