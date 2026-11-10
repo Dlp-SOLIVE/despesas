@@ -2,8 +2,10 @@
 // Emails automáticos dos pedidos de despesas (Gmail ou Resend, como nas Entregas):
 //   event "submitted" → ao manager: pedido submetido, aguarda aprovação
 //   event "approved"  → ao colaborador: pedido aprovado pelo manager
+//   event "returned"  → ao colaborador: pedido devolvido, com o comentário e as notas por recibo
+//   event "paid"      → ao colaborador: pagamento registado, com a data e a referência
 // Língua: a do destinatário (exp_profiles.lang, gravada pela plataforma quando escolhe PT/EN); por defeito PT.
-// É chamada pela base de dados (trigger exp_claims_notify, migração 20261110180000_email_aprovado.sql),
+// É chamada pela base de dados (trigger exp_claims_notify, migração 20261111120000_email_devolvido_pago.sql),
 // nunca pelo browser. Publicar com «Verify JWT» DESLIGADO: a proteção é o segredo partilhado.
 // Segredos (Supabase → Edge Functions → Secrets):
 //   NOTIFY_SECRET        o mesmo texto guardado no Vault com o nome exp_notify_secret
@@ -70,8 +72,22 @@ const T = {
     automatic: "Este email é automático.",
     submittedSubject: (emp: string, per: string, tot: string) => `Despesas · ${emp} submeteu o pedido de ${per} (${tot})`,
     approvedSubject: (per: string, tot: string) => `Despesas · Pedido de ${per} aprovado (${tot})`,
+    returnedIntro: (who: string) => `O seu pedido de reembolso de despesas foi <strong>devolvido</strong> por <strong>${who}</strong> para correção.`,
+    returnedText: (who: string) => `O seu pedido de reembolso de despesas foi devolvido por ${who} para correção.`,
+    returnedFooter: "Corrija o que for indicado em «O meu mês» e volte a submeter.",
+    returnedSubject: (per: string) => `Despesas · Pedido de ${per} devolvido para correção`,
+    reason: "Motivo",
+    lineNotes: "Notas por recibo",
+    receiptNo: (n: number) => `Recibo ${n}`,
+    paidIntro: "O pagamento do seu pedido de reembolso de despesas foi <strong>registado</strong>.",
+    paidText: "O pagamento do seu pedido de reembolso de despesas foi registado.",
+    paidFooter: "O valor deve aparecer na sua conta nos próximos dias úteis.",
+    paidSubject: (per: string, tot: string) => `Despesas · Pedido de ${per} pago (${tot})`,
+    paidOn: "Data do pagamento",
+    paymentRef: "Referência",
     review: "Rever o pedido",
     view: "Ver o pedido",
+    fix: "Corrigir o pedido",
     month: "Mês",
     costCenter: "Cost center",
     receipts: "Recibos",
@@ -91,8 +107,22 @@ const T = {
     automatic: "This is an automatic email.",
     submittedSubject: (emp: string, per: string, tot: string) => `Expenses · ${emp} submitted the ${per} claim (${tot})`,
     approvedSubject: (per: string, tot: string) => `Expenses · ${per} claim approved (${tot})`,
+    returnedIntro: (who: string) => `Your expense claim has been <strong>returned</strong> by <strong>${who}</strong> for correction.`,
+    returnedText: (who: string) => `Your expense claim has been returned by ${who} for correction.`,
+    returnedFooter: "Make the requested corrections in «My month» and submit it again.",
+    returnedSubject: (per: string) => `Expenses · ${per} claim returned for correction`,
+    reason: "Reason",
+    lineNotes: "Notes per receipt",
+    receiptNo: (n: number) => `Receipt ${n}`,
+    paidIntro: "The payment of your expense claim has been <strong>recorded</strong>.",
+    paidText: "The payment of your expense claim has been recorded.",
+    paidFooter: "The amount should reach your account within the next few working days.",
+    paidSubject: (per: string, tot: string) => `Expenses · ${per} claim paid (${tot})`,
+    paidOn: "Payment date",
+    paymentRef: "Reference",
     review: "Review the claim",
     view: "View the claim",
+    fix: "Fix the claim",
     month: "Month",
     costCenter: "Cost center",
     receipts: "Receipts",
@@ -112,8 +142,11 @@ Deno.serve(async (req) => {
   try {
     const { claim_id, event: rawEvent } = await req.json();
     if (!claim_id || typeof claim_id !== "string") return json({ error: "Falta claim_id" }, 400);
-    const event = rawEvent === "approved" ? "approved" : "submitted";
-    const expected = event === "approved" ? "approved_mgr" : "submitted";
+    type Ev = "submitted" | "approved" | "returned" | "paid";
+    const STATUS: Record<Ev, string> = { submitted: "submitted", approved: "approved_mgr", returned: "returned", paid: "posted" };
+    const event: Ev = typeof rawEvent === "string" && rawEvent in STATUS ? (rawEvent as Ev) : "submitted";
+    const expected = STATUS[event];
+    const toOwner = event !== "submitted";
 
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
       auth: { persistSession: false },
@@ -131,12 +164,13 @@ Deno.serve(async (req) => {
     const [owner, profile, lines, trips, settings, cc, last] = await Promise.all([
       sb.from("staff_members").select("full_name, email").eq("id", claim.staff_member_id).single(),
       sb.from("exp_profiles").select("manager_id").eq("staff_member_id", claim.staff_member_id).single(),
-      sb.from("exp_lines").select("incl, currency, rate").eq("claim_id", claim.id),
+      sb.from("exp_lines").select("no, client, incl, currency, rate, approver_note").eq("claim_id", claim.id).order("no"),
       sb.from("exp_trips").select("km, round_trip").eq("claim_id", claim.id),
       sb.from("exp_settings").select("km_rate").eq("id", 1).single(),
       sb.from("exp_cost_centers").select("label").eq("code", claim.cost_center).maybeSingle(),
-      // Último passo do histórico = quem aprovou (o histórico é escrito na mesma transação da mudança de estado)
-      sb.from("exp_history").select("actor_id").eq("claim_id", claim.id).order("at", { ascending: false }).limit(1).maybeSingle(),
+      // Último passo do histórico = quem aprovou/devolveu/pagou e o comentário
+      // (o histórico é escrito na mesma transação da mudança de estado)
+      sb.from("exp_history").select("actor_id, comment").eq("claim_id", claim.id).order("at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     for (const r of [owner, profile, lines, trips, settings]) if (r.error) throw r.error;
 
@@ -150,11 +184,11 @@ Deno.serve(async (req) => {
       ? (await sb.from("staff_members").select("full_name").eq("id", approverId).maybeSingle()).data
       : mgr.data;
 
-    // Destinatário: manager (submetido) ou colaborador (aprovado)
-    const to = event === "approved" ? owner.data : mgr.data;
+    // Destinatário: manager (submetido) ou colaborador (restantes)
+    const to = toOwner ? owner.data : mgr.data;
     if (event === "submitted" && !managerId) return json({ skipped: "Colaborador sem manager atribuído" });
     if (!to?.email) return json({ skipped: "Destinatário sem email" });
-    const toId = event === "approved" ? claim.staff_member_id : managerId;
+    const toId = toOwner ? claim.staff_member_id : managerId;
     // Se a coluna lang ainda não existir (SQL por correr), dá erro e fica PT
     const langRow = await sb.from("exp_profiles").select("lang").eq("staff_member_id", toId).maybeSingle();
     const lang: Lang = !langRow.error && (langRow.data as { lang?: string } | null)?.lang === "en" ? "en" : "pt";
@@ -176,15 +210,51 @@ Deno.serve(async (req) => {
     const period = periodLabel(claim.period, lang);
     const ccText = cc.data?.label ? `${claim.cost_center} · ${cc.data.label}` : claim.cost_center;
 
+    // Quem decidiu (aprovou/devolveu): nome e email, para «Responder»
+    const actor = approverId && approverId !== managerId
+      ? (await sb.from("staff_members").select("full_name, email").eq("id", approverId).maybeSingle()).data
+      : mgr.data;
     const approverName = approver?.full_name ?? L.yourManager;
-    const intro = event === "approved" ? L.approvedIntro(esc(approverName)) : L.submittedIntro(esc(employee));
-    const introText = event === "approved" ? L.approvedText(approverName) : L.submittedText(employee);
-    const footer = event === "approved" ? L.approvedFooter : L.submittedFooter;
-    const subject = event === "approved"
-      ? L.approvedSubject(period, eur.format(total))
-      : L.submittedSubject(employee, period, eur.format(total));
-    const button = event === "approved" ? L.view : L.review;
-    const replyTo = event === "approved" ? mgr.data?.email : owner.data?.email;
+    const comment = (last.data?.comment ?? "").trim();
+    // Notas por recibo (só na devolução)
+    const notes = event === "returned"
+      ? (lines.data ?? []).filter((l) => (l.approver_note ?? "").trim()).map((l) => ({
+          label: `${L.receiptNo(Number(l.no))}${l.client ? ` · ${l.client}` : ""}`,
+          note: String(l.approver_note).trim(),
+        }))
+      : [];
+    // Data e referência do pagamento (só no pago)
+    let paidOn = "", paymentRef = "";
+    if (event === "paid") {
+      const pay = await sb.from("exp_claims").select("paid_on, payment_ref").eq("id", claim.id).maybeSingle();
+      const d = (pay.data as { paid_on?: string | null } | null)?.paid_on ?? "";
+      paidOn = /^\d{4}-\d{2}-\d{2}/.test(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "";
+      paymentRef = ((pay.data as { payment_ref?: string | null } | null)?.payment_ref ?? "").trim();
+    }
+
+    const who = approverName;
+    const intro = {
+      submitted: L.submittedIntro(esc(employee)),
+      approved: L.approvedIntro(esc(who)),
+      returned: L.returnedIntro(esc(who)),
+      paid: L.paidIntro,
+    }[event];
+    const introText = {
+      submitted: L.submittedText(employee),
+      approved: L.approvedText(who),
+      returned: L.returnedText(who),
+      paid: L.paidText,
+    }[event];
+    const footer = { submitted: L.submittedFooter, approved: L.approvedFooter, returned: L.returnedFooter, paid: L.paidFooter }[event];
+    const subject = {
+      submitted: L.submittedSubject(employee, period, eur.format(total)),
+      approved: L.approvedSubject(period, eur.format(total)),
+      returned: L.returnedSubject(period),
+      paid: L.paidSubject(period, eur.format(total)),
+    }[event];
+    const button = { submitted: L.review, approved: L.view, returned: L.fix, paid: L.view }[event];
+    // «Responder»: o manager responde ao colaborador; o colaborador responde a quem decidiu
+    const replyTo = event === "submitted" ? owner.data?.email : event === "paid" ? undefined : actor?.email ?? mgr.data?.email;
 
     const row = (k: string, v: string) =>
       `<tr><td style="color:#777;padding:4px 16px 4px 0">${k}</td><td style="padding:4px 0">${v}</td></tr>`;
@@ -201,7 +271,11 @@ Deno.serve(async (req) => {
         ${row(L.receipts, `${(lines.data ?? []).length} · ${esc(eur.format(receipts))}`)}
         ${row(L.km, `${esc(num1.format(km))} km · ${esc(eur.format(kmEUR))}`)}
         ${row(L.total, `<strong>${esc(eur.format(total))}</strong>`)}
+        ${paidOn ? row(L.paidOn, `<strong>${esc(paidOn)}</strong>`) : ""}
+        ${paymentRef ? row(L.paymentRef, esc(paymentRef)) : ""}
       </table>
+      ${event === "returned" && comment ? `<div style="border-left:3px solid #e30613;background:#fbeaea;padding:10px 14px;margin:0 0 16px"><div style="color:#777;font-size:12px;margin-bottom:4px">${esc(L.reason)}</div>${esc(comment).replace(/\n/g, "<br>")}</div>` : ""}
+      ${notes.length ? `<div style="margin:0 0 20px"><div style="color:#777;font-size:12px;margin-bottom:6px">${esc(L.lineNotes)}</div><ul style="margin:0;padding-left:18px">${notes.map((n) => `<li style="margin:0 0 4px"><strong>${esc(n.label)}</strong>: ${esc(n.note)}</li>`).join("")}</ul></div>` : ""}
       <p style="margin:0 0 24px"><a href="${esc(link)}" style="background:#e30613;color:#ffffff;text-decoration:none;padding:10px 18px;font-weight:bold;display:inline-block">${esc(button)}</a></p>
       <p style="margin:0;color:#777;font-size:12px">${esc(footer)} ${esc(L.automatic)}</p>
     </td></tr>
@@ -210,8 +284,14 @@ Deno.serve(async (req) => {
     const text =
       `${L.hello(to.full_name)}\n\n${introText}\n\n` +
       `${L.month}: ${period}\n${L.costCenter}: ${ccText}\n${L.receipts}: ${(lines.data ?? []).length} · ${eur.format(receipts)}\n` +
-      `${L.km}: ${num1.format(km)} km · ${eur.format(kmEUR)}\n${L.total}: ${eur.format(total)}\n\n${footer}\n\n${button}: ${link}\n`;
+      `${L.km}: ${num1.format(km)} km · ${eur.format(kmEUR)}\n${L.total}: ${eur.format(total)}\n` +
+      (paidOn ? `${L.paidOn}: ${paidOn}\n` : "") +
+      (paymentRef ? `${L.paymentRef}: ${paymentRef}\n` : "") +
+      (event === "returned" && comment ? `\n${L.reason}: ${comment}\n` : "") +
+      (notes.length ? `\n${L.lineNotes}:\n${notes.map((n) => `- ${n.label}: ${n.note}`).join("\n")}\n` : "") +
+      `\n${footer}\n\n${button}: ${link}\n`;
 
+    const EV_PT: Record<Ev, string> = { submitted: "submetido", approved: "aprovado", returned: "devolvido", paid: "pago" };
     let errMsg = "";
     try {
       await sendMail({
@@ -228,8 +308,8 @@ Deno.serve(async (req) => {
     await sb.from("exp_audit").insert({
       actor_id: null,
       action: ok
-        ? `Email (${event === "approved" ? "aprovado" : "submetido"}, ${lang.toUpperCase()}) enviado a ${to.full_name} (pedido ${claim.period} · ${claim.cost_center})`
-        : `Falhou o email (${event === "approved" ? "aprovado" : "submetido"}) a ${to.full_name} (pedido ${claim.period} · ${claim.cost_center}): ${errMsg.slice(0, 300)}`,
+        ? `Email (${EV_PT[event]}, ${lang.toUpperCase()}) enviado a ${to.full_name} (pedido ${claim.period} · ${claim.cost_center})`
+        : `Falhou o email (${EV_PT[event]}) a ${to.full_name} (pedido ${claim.period} · ${claim.cost_center}): ${errMsg.slice(0, 300)}`,
     });
     return json(ok ? { sent: true } : { error: errMsg }, ok ? 200 : 502);
   } catch (e) {

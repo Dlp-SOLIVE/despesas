@@ -7,6 +7,11 @@ chama a Edge Function `exp-notify`, que envia pelo **Gmail** (como a plataforma 
 Quando o manager **aprova** o pedido, o **colaborador** recebe um email «Pedido de … aprovado», com quem aprovou,
 o resumo e o botão **Ver o pedido** (responder vai para o manager).
 
+Quando o pedido é **devolvido** (por quem estiver a decidir), o **colaborador** recebe «Pedido de … devolvido para correção»,
+com o motivo, as notas por recibo e o botão **Corrigir o pedido** (responder vai para quem devolveu).
+
+Quando o Administrativo **regista o pagamento**, o **colaborador** recebe «Pedido de … pago», com a data e a referência.
+
 **Língua:** cada email sai na língua que o destinatário escolheu na plataforma (botões PT / EN), guardada no
 perfil (`exp_profiles.lang`, migração `20261111100000_email_idioma.sql`). Quem nunca escolheu recebe em português.
 Valores sempre no formato europeu (1.234,50 €).
@@ -15,8 +20,8 @@ Valores sempre no formato europeu (1.234,50 €).
 - Uma falha no email **nunca** impede a submissão.
 - Cada envio (ou falha) fica no **Audit log**: «Email enviado a …» / «Falhou o email a …».
 
-Ficheiros: `supabase/functions/exp-notify/index.ts`, `supabase/migrations/20261110180000_email_aprovado.sql`
-(substitui o trigger de `20261110120000_email_aprovador.sql`),
+Ficheiros: `supabase/functions/exp-notify/index.ts`, `supabase/migrations/20261111120000_email_devolvido_pago.sql`
+(substitui o trigger das migrações anteriores de email),
 `src/views/Submit.tsx` (sem EmailJS).
 
 ## 1. Conta Gmail (sem DNS nem IT)
@@ -53,7 +58,7 @@ SQL Editor → New query → correr, trocando o texto secreto pelo **mesmo** do 
 select vault.create_secret('https://rfdsxigfodzayoxebbga.supabase.co/functions/v1/exp-notify', 'exp_notify_url');
 select vault.create_secret('<o mesmo texto do NOTIFY_SECRET>', 'exp_notify_secret');
 ```
-Depois colar e correr `supabase/migrations/20261110180000_email_aprovado.sql`.
+Depois colar e correr `supabase/migrations/20261111120000_email_devolvido_pago.sql`.
 
 Para mudar o segredo mais tarde:
 ```sql
