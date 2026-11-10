@@ -17,6 +17,15 @@ const subs = new Set<() => void>();
 if (typeof document !== "undefined") document.documentElement.lang = lang === "pt" ? "pt-PT" : "en";
 
 export const getLang = () => lang;
+/** true se a pessoa já escolheu PT/EN neste browser */
+export function hasLangChoice(): boolean {
+  try {
+    const v = window.localStorage.getItem(KEY);
+    return v === "pt" || v === "en";
+  } catch {
+    return false;
+  }
+}
 export function setLang(l: Lang) {
   if (l === lang) return;
   lang = l;

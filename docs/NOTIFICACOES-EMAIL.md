@@ -1,14 +1,22 @@
-# Email automático ao aprovador (Supabase + Gmail)
+# Emails automáticos (Supabase + Gmail)
 
 Quando um pedido passa a **submetido** (primeira submissão ou nova submissão depois de devolvido), a base de dados
 chama a Edge Function `exp-notify`, que envia pelo **Gmail** (como a plataforma de Entregas) um email ao **manager** do colaborador
 (Administração → Utilizadores → coluna Manager) com o resumo e o botão **Rever o pedido**.
 
+Quando o manager **aprova** o pedido, o **colaborador** recebe um email «Pedido de … aprovado», com quem aprovou,
+o resumo e o botão **Ver o pedido** (responder vai para o manager).
+
+**Língua:** cada email sai na língua que o destinatário escolheu na plataforma (botões PT / EN), guardada no
+perfil (`exp_profiles.lang`, migração `20261111100000_email_idioma.sql`). Quem nunca escolheu recebe em português.
+Valores sempre no formato europeu (1.234,50 €).
+
 - O envio é feito no servidor: não depende do browser de quem submete e as chaves nunca vão para o site.
 - Uma falha no email **nunca** impede a submissão.
 - Cada envio (ou falha) fica no **Audit log**: «Email enviado a …» / «Falhou o email a …».
 
-Ficheiros: `supabase/functions/exp-notify/index.ts`, `supabase/migrations/20261110120000_email_aprovador.sql`,
+Ficheiros: `supabase/functions/exp-notify/index.ts`, `supabase/migrations/20261110180000_email_aprovado.sql`
+(substitui o trigger de `20261110120000_email_aprovador.sql`),
 `src/views/Submit.tsx` (sem EmailJS).
 
 ## 1. Conta Gmail (sem DNS nem IT)
@@ -45,7 +53,7 @@ SQL Editor → New query → correr, trocando o texto secreto pelo **mesmo** do 
 select vault.create_secret('https://rfdsxigfodzayoxebbga.supabase.co/functions/v1/exp-notify', 'exp_notify_url');
 select vault.create_secret('<o mesmo texto do NOTIFY_SECRET>', 'exp_notify_secret');
 ```
-Depois colar e correr `supabase/migrations/20261110120000_email_aprovador.sql`.
+Depois colar e correr `supabase/migrations/20261110180000_email_aprovado.sql`.
 
 Para mudar o segredo mais tarde:
 ```sql
