@@ -1,6 +1,8 @@
 // Edge Function: exp-notify
-// Envia o email ao manager quando um pedido de despesas é submetido (Gmail ou Resend, como nas Entregas).
-// É chamada pela base de dados (trigger exp_claims_notify, migração 20261110120000_email_aprovador.sql),
+// Emails automáticos dos pedidos de despesas (Gmail ou Resend, como nas Entregas):
+//   event "submitted" → ao manager: pedido submetido, aguarda aprovação
+//   event "approved"  → ao colaborador: pedido aprovado pelo manager
+// É chamada pela base de dados (trigger exp_claims_notify, migração 20261110180000_email_aprovado.sql),
 // nunca pelo browser. Publicar com «Verify JWT» DESLIGADO: a proteção é o segredo partilhado.
 // Segredos (Supabase → Edge Functions → Secrets):
 //   NOTIFY_SECRET        o mesmo texto guardado no Vault com o nome exp_notify_secret
@@ -54,8 +56,10 @@ Deno.serve(async (req) => {
   if (!secret || req.headers.get("x-exp-secret") !== secret) return json({ error: "Não autorizado" }, 401);
 
   try {
-    const { claim_id } = await req.json();
+    const { claim_id, event: rawEvent } = await req.json();
     if (!claim_id || typeof claim_id !== "string") return json({ error: "Falta claim_id" }, 400);
+    const event = rawEvent === "approved" ? "approved" : "submitted";
+    const expected = event === "approved" ? "approved_mgr" : "submitted";
 
     const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!, {
       auth: { persistSession: false },
@@ -68,23 +72,34 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (e1) throw e1;
     if (!claim) return json({ error: "Pedido não encontrado" }, 404);
-    if (claim.status !== "submitted") return json({ skipped: "O pedido já não está submetido" });
+    if (claim.status !== expected) return json({ skipped: `O pedido já não está no estado ${expected}` });
 
-    const [owner, profile, lines, trips, settings, cc] = await Promise.all([
+    const [owner, profile, lines, trips, settings, cc, last] = await Promise.all([
       sb.from("staff_members").select("full_name, email").eq("id", claim.staff_member_id).single(),
       sb.from("exp_profiles").select("manager_id").eq("staff_member_id", claim.staff_member_id).single(),
       sb.from("exp_lines").select("incl, currency, rate").eq("claim_id", claim.id),
       sb.from("exp_trips").select("km, round_trip").eq("claim_id", claim.id),
       sb.from("exp_settings").select("km_rate").eq("id", 1).single(),
       sb.from("exp_cost_centers").select("label").eq("code", claim.cost_center).maybeSingle(),
+      // Último passo do histórico = quem aprovou (o histórico é escrito na mesma transação da mudança de estado)
+      sb.from("exp_history").select("actor_id").eq("claim_id", claim.id).order("at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     for (const r of [owner, profile, lines, trips, settings]) if (r.error) throw r.error;
 
     const managerId = profile.data?.manager_id;
-    if (!managerId) return json({ skipped: "Colaborador sem manager atribuído" });
-    const mgr = await sb.from("staff_members").select("full_name, email").eq("id", managerId).single();
+    const mgr = managerId
+      ? await sb.from("staff_members").select("full_name, email").eq("id", managerId).single()
+      : { data: null, error: null };
     if (mgr.error) throw mgr.error;
-    if (!mgr.data?.email) return json({ skipped: "Manager sem email" });
+    const approverId = last.data?.actor_id ?? managerId;
+    const approver = approverId && approverId !== managerId
+      ? (await sb.from("staff_members").select("full_name").eq("id", approverId).maybeSingle()).data
+      : mgr.data;
+
+    // Destinatário: manager (submetido) ou colaborador (aprovado)
+    const to = event === "approved" ? owner.data : mgr.data;
+    if (event === "submitted" && !managerId) return json({ skipped: "Colaborador sem manager atribuído" });
+    if (!to?.email) return json({ skipped: "Destinatário sem email" });
 
     // Mesmas contas que claimTotals (src/lib/rules.ts)
     const receipts = (lines.data ?? []).reduce((a, l) => {
@@ -102,6 +117,21 @@ Deno.serve(async (req) => {
     const period = periodLabel(claim.period);
     const ccText = cc.data?.label ? `${claim.cost_center} · ${cc.data.label}` : claim.cost_center;
 
+    const approverName = approver?.full_name ?? "o seu manager";
+    const intro = event === "approved"
+      ? `O seu pedido de reembolso de despesas foi <strong>aprovado</strong> por <strong>${esc(approverName)}</strong>.`
+      : `<strong>${esc(employee)}</strong> submeteu um pedido de reembolso de despesas que aguarda a sua aprovação.`;
+    const introText = event === "approved"
+      ? `O seu pedido de reembolso de despesas foi aprovado por ${approverName}.`
+      : `${employee} submeteu um pedido de reembolso de despesas que aguarda a sua aprovação.`;
+    const footer = event === "approved"
+      ? "Segue agora para registo pelos RH e, depois, para pagamento."
+      : "Pode aprovar ou devolver com comentários em Aprovações.";
+    const subject = event === "approved"
+      ? `Despesas · Pedido de ${period} aprovado (${eur.format(total)})`
+      : `Despesas · ${employee} submeteu o pedido de ${period} (${eur.format(total)})`;
+    const replyTo = event === "approved" ? mgr.data?.email : owner.data?.email;
+
     const row = (k: string, v: string) =>
       `<tr><td style="color:#777;padding:4px 16px 4px 0">${k}</td><td style="padding:4px 0">${v}</td></tr>`;
     const html = `
@@ -109,8 +139,8 @@ Deno.serve(async (req) => {
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e3e3e3">
     <tr><td style="background:#1d1d1b;color:#ffffff;padding:16px 24px;font-size:15px;letter-spacing:2px;font-weight:bold">LEGENDRE · DESPESAS</td></tr>
     <tr><td style="padding:24px;color:#1d1d1b;font-size:14px;line-height:1.5">
-      <p style="margin:0 0 12px">Olá ${esc(mgr.data.full_name)},</p>
-      <p style="margin:0 0 16px"><strong>${esc(employee)}</strong> submeteu um pedido de reembolso de despesas que aguarda a sua aprovação.</p>
+      <p style="margin:0 0 12px">Olá ${esc(to.full_name)},</p>
+      <p style="margin:0 0 16px">${intro}</p>
       <table role="presentation" cellspacing="0" cellpadding="0" style="font-size:14px;margin:0 0 20px">
         ${row("Mês", `<strong>${esc(period)}</strong>`)}
         ${row("Cost center", esc(ccText))}
@@ -118,22 +148,22 @@ Deno.serve(async (req) => {
         ${row("Quilómetros", `${esc(num1.format(km))} km · ${esc(eur.format(kmEUR))}`)}
         ${row("Total", `<strong>${esc(eur.format(total))}</strong>`)}
       </table>
-      <p style="margin:0 0 24px"><a href="${esc(link)}" style="background:#e30613;color:#ffffff;text-decoration:none;padding:10px 18px;font-weight:bold;display:inline-block">Rever o pedido</a></p>
-      <p style="margin:0;color:#777;font-size:12px">Pode aprovar ou devolver com comentários em Aprovações. Este email é automático: não responda.</p>
+      <p style="margin:0 0 24px"><a href="${esc(link)}" style="background:#e30613;color:#ffffff;text-decoration:none;padding:10px 18px;font-weight:bold;display:inline-block">${event === "approved" ? "Ver o pedido" : "Rever o pedido"}</a></p>
+      <p style="margin:0;color:#777;font-size:12px">${esc(footer)} Este email é automático.</p>
     </td></tr>
   </table>
 </div>`;
     const text =
-      `Olá ${mgr.data.full_name},\n\n${employee} submeteu um pedido de reembolso de despesas que aguarda a sua aprovação.\n\n` +
+      `Olá ${to.full_name},\n\n${introText}\n\n` +
       `Mês: ${period}\nCost center: ${ccText}\nRecibos: ${(lines.data ?? []).length} · ${eur.format(receipts)}\n` +
-      `Quilómetros: ${num1.format(km)} km · ${eur.format(kmEUR)}\nTotal: ${eur.format(total)}\n\nRever o pedido: ${link}\n`;
+      `Quilómetros: ${num1.format(km)} km · ${eur.format(kmEUR)}\nTotal: ${eur.format(total)}\n\n${footer}\n\n${event === "approved" ? "Ver o pedido" : "Rever o pedido"}: ${link}\n`;
 
     let errMsg = "";
     try {
       await sendMail({
-        to: mgr.data.email,
-        replyTo: owner.data?.email || undefined,
-        subject: `Despesas · ${employee} submeteu o pedido de ${period} (${eur.format(total)})`,
+        to: to.email,
+        replyTo: replyTo || undefined,
+        subject,
         html,
         text,
       });
@@ -144,8 +174,8 @@ Deno.serve(async (req) => {
     await sb.from("exp_audit").insert({
       actor_id: null,
       action: ok
-        ? `Email enviado a ${mgr.data.full_name} (pedido ${claim.period} · ${claim.cost_center})`
-        : `Falhou o email a ${mgr.data.full_name} (pedido ${claim.period} · ${claim.cost_center}): ${errMsg.slice(0, 300)}`,
+        ? `Email (${event === "approved" ? "aprovado" : "submetido"}) enviado a ${to.full_name} (pedido ${claim.period} · ${claim.cost_center})`
+        : `Falhou o email (${event === "approved" ? "aprovado" : "submetido"}) a ${to.full_name} (pedido ${claim.period} · ${claim.cost_center}): ${errMsg.slice(0, 300)}`,
     });
     return json(ok ? { sent: true } : { error: errMsg }, ok ? 200 : 502);
   } catch (e) {
