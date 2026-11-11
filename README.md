@@ -3,71 +3,97 @@
 Plataforma de pedidos de reembolso de despesas e mapa de quilómetros da Legendre PT.
 Gera o **Excel oficial** ("To be printed", "Expense Claim Form", "Détail IK") e o **PDF único** com os recibos numerados, tal como a contabilidade exige.
 
+- Site: https://legendrept-expenses.netlify.app (Netlify, projeto `legendrept-expenses`)
 - Repositório: `Dlp-SOLIVE/despesas` (ramo `main` → deploy automático no Netlify)
 - Supabase: projeto próprio `Legendre-Expenses` (`rfdsxigfodzayoxebbga`), separado do Sistema de Compras. Tabelas com prefixo `exp_`.
+- Interface em português e inglês (botões PT / EN); os emails seguem a língua de quem os recebe.
 
 ## Tecnologia
-Vite + React + TypeScript (`tsc -b && vite build`), Supabase (Auth, Postgres com RLS, Storage, Edge Function), ExcelJS e pdf-lib (carregados só ao exportar).
+Vite + React + TypeScript, Supabase (Auth, Postgres com RLS, Storage, Edge Functions, Vault, pg_net), ExcelJS e pdf-lib (carregados só ao exportar).
 
-## Fluxo
-Colaborador (rascunho, recibos, km) → submete a partir do dia 20 → **Manager** aprova ou devolve → **RH** valida → **Contabilidade** descarrega Excel + PDF e marca como lançado.
+## Estrutura
+| Pasta | Conteúdo |
+|---|---|
+| `src/` | `main.tsx`, `App.tsx` (login, registo, pedido de acesso), `Shell.tsx` (navegação), `ui.tsx`, `types.ts`, `styles.css` |
+| `src/lib/` | `data.ts` (chamadas ao Supabase), `rules.ts` (regras do procedimento RH), `export.ts` (Excel + PDF), `localOcr.ts` (leitura dos recibos), `i18n.ts` (PT/EN), `format.ts`, `supabase.ts` |
+| `src/views/` | Ecrãs: O meu mês, Recibo, Quilómetros, Submeter, Aprovações/Pagamentos, Histórico/Perfil, Administração |
+| `public/` | `template.xlsx` (modelo oficial do Excel) e ícones |
+| `supabase/migrations/` | SQL, por ordem de data |
+| `supabase/functions/` | `exp-notify` (emails automáticos), `exp-ocr` (leitura de recibos com Claude, opcional) |
+| `docs/` | `NOTIFICACOES-EMAIL.md` (configuração e diagnóstico dos emails) |
+
+## Circuito
+1. **Colaborador**: rascunho do mês (recibos e km) → submete, em qualquer dia do mês.
+2. **Manager** do colaborador (definido em Administração → Utilizadores) aprova ou devolve. RH e Administrativo veem o pedido em «Para conhecimento».
+3. **RH**: «Registar (RH)».
+4. **Administrativo (pagamentos)**, separador **Pagamentos**: «Registar pagamento», com data (até hoje) e referência → **Pago**.
+
+Em qualquer passo, quem decide pode **devolver**. A devolução exige um comentário e pode levar notas por recibo.
+Ninguém aprova o próprio pedido (exceto o administrador). Depois de pago, só o administrador reabre ou apaga, com motivo.
 O estado só muda pelas funções `exp_submit`, `exp_decide`, `exp_admin_reopen` (há um trigger que o garante). O audit log não pode ser alterado.
 
-## Instalação (uma vez, por esta ordem)
+### Emails automáticos
+Saem do Supabase (Edge Function `exp-notify`, chamada por um trigger), pela conta Gmail configurada:
 
-### 1. Base de dados
-Supabase → **SQL Editor** → New query → colar todo o ficheiro `supabase/migrations/20261102120000_despesas_schema.sql` → **Run**.
-Pode voltar a correr o script sem problema (não duplica nada).
+| Quando | Quem recebe |
+|---|---|
+| Pedido submetido | Manager |
+| Pedido aprovado pelo manager | Colaborador |
+| Pedido devolvido (motivo + notas por recibo) | Colaborador |
+| Pagamento registado (data + referência) | Colaborador |
 
-### 2. Leitura automática dos recibos
+Configuração, segredos e diagnóstico: `docs/NOTIFICACOES-EMAIL.md`.
+
+## Regras do procedimento RH
+- Um pedido por mês e por cost center. Recibos com até 3 meses. Máximo de 24 recibos e 61 trajetos.
+- NIF da empresa em cada recibo (LEGDR 515 345 946; Legendre Ibérica 515 461 504).
+- Subcategoria própria em vez de "Others travel expenses". DETAILS obrigatório (restaurantes: interno/externo, motivo, participantes; voo/comboio: motivo e origem > destino; hotel: cidade e motivo).
+- Sem IVA discriminado: valor sem IVA = valor com IVA.
+- Quilómetros a 0,40 €, matrícula XX-XX-XX e declaração de seguro automóvel (sem declaração não há trajetos).
+- Nome dos ficheiros: `AnoMês – Expense Claim Form – Nome Apelido MATxxxxx`.
+
+## Leitura automática dos recibos
 Gratuita e sem configuração: corre no browser do colaborador (nada é enviado para serviços externos).
 1. **Código QR fiscal** das faturas portuguesas (Portaria 195/2020): data, NIF emitente e adquirente, total, IVA, ATCUD — dados exatos.
 2. **Texto**: PDF digital (pdf.js) ou fotografia (Tesseract, português) — nome da entidade, categoria sugerida e, sem QR, data e total.
+
 Todos os campos continuam editáveis. Recibos estrangeiros e talões sem QR leem-se pior: confirmar sempre.
+A Edge Function `exp-ocr` (Claude, chave `ANTHROPIC_API_KEY`) está preparada mas não é usada nesta versão.
 
-**Opcional, mais tarde (Claude):** a Edge Function `supabase/functions/exp-ocr` fica pronta para quando houver chave `ANTHROPIC_API_KEY`; não é usada nesta versão.
-1. console.anthropic.com → API Keys → **Create Key** (conta da empresa).
-2. Supabase → **Edge Functions** → Secrets → `ANTHROPIC_API_KEY` = a chave.
-3. Publicar a função `supabase/functions/exp-ocr`:
-   - pelo browser: Edge Functions → **Deploy a new function** → nome `exp-ocr` → colar `index.ts` → Deploy;
-   - ou com a CLI: `supabase functions deploy exp-ocr --project-ref rfdsxigfodzayoxebbga`.
-Sem chave, a plataforma funciona na mesma: os recibos são preenchidos à mão.
+## Instalação de raiz (só para recriar a plataforma)
 
-### 2b. DocuSign (opcional, pode ser desligado)
-Assinatura real das aprovações do manager e dos RH. Envio por um utilizador de serviço da conta DocuSign da empresa; cada aprovador assina com o seu nome e email, sem sair da plataforma.
-1. SQL: correr `supabase/migrations/20261103100000_docusign.sql`.
-2. DocuSign (administrador da conta): **Settings → Apps and Keys → Add App and Integration Key**. Em *Authentication*, **Generate RSA** e guardar a chave privada. Em *Redirect URIs*, acrescentar `https://www.docusign.com`.
-3. Copiar da mesma página: *Integration Key*, *API Username* (User ID) e *API Account ID*.
-4. Supabase → Edge Functions → Secrets: `DOCUSIGN_INTEGRATION_KEY`, `DOCUSIGN_USER_ID`, `DOCUSIGN_ACCOUNT_ID`, `DOCUSIGN_PRIVATE_KEY` (texto completo da chave) e `DOCUSIGN_ENV` (`demo` para testar, `prod` para a conta real).
-5. Publicar a função `supabase/functions/exp-docusign` (Deploy a new function → nome `exp-docusign`).
-6. Na primeira utilização a plataforma mostra um link de autorização (consentimento): o utilizador de serviço abre-o uma vez e aceita.
-7. Na plataforma: Administração → Parâmetros → **DocuSign** ligado; cada aprovador ativa DocuSign no Perfil.
-Nota: aplicações novas começam no ambiente *demo* da DocuSign; para usar a conta real é preciso pedir o *Go-Live* da Integration Key (feito pela DocuSign depois de alguns envios de teste).
+### 1. Base de dados
+Supabase → **SQL Editor** → correr os ficheiros de `supabase/migrations/` por ordem de data. Podem voltar a correr sem problema.
+Depois de mudar funções ou colunas: `notify pgrst, 'reload schema';`.
 
-### 3. GitHub
-Carregar todos os ficheiros desta pasta para `Dlp-SOLIVE/despesas` (Add file → Upload files → arrastar o conteúdo da pasta → Commit).
+Atenção: três alterações já feitas no Supabase não estão guardadas nesta pasta (seguro automóvel obrigatório para trajetos; circuito de pagamento com `paid_on` / `payment_ref`; remoção do DocuSign). Para recriar a base de dados é preciso exportá-las primeiro do Supabase.
 
-### 4. Netlify
-Add new site → Import from GitHub → `Dlp-SOLIVE/despesas`. Build: `npm run build`, pasta `dist` (já definidos em `netlify.toml`).
-Site configuration → **Environment variables**: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (Supabase → Project Settings → API). **Nunca** a service role key.
-Depois: Deploys → Trigger deploy → confirmar **Published**.
+### 2. Emails
+Seguir `docs/NOTIFICACOES-EMAIL.md` (conta Gmail, segredos, função `exp-notify` com «Verify JWT» desligado, Vault).
 
-### 5. Supabase Auth
-Authentication → URL Configuration → **Redirect URLs**: acrescentar o endereço Netlify das Despesas (para a recuperação de palavra-passe).
+### 3. Netlify
+Import from GitHub → `Dlp-SOLIVE/despesas`. Build `npm run build`, pasta `dist` (já em `netlify.toml`).
+Environment variables: `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (Supabase → Project Settings → API). **Nunca** a service role key.
 
-### 6. Primeiro administrador
+### 4. Supabase Auth
+Authentication → URL Configuration: Site URL `https://legendrept-expenses.netlify.app` e Redirect URL `https://legendrept-expenses.netlify.app/**`.
+
+### 5. Primeiro administrador
 Criar conta no site e pedir acesso. No SQL Editor:
 ```sql
 insert into public.exp_profiles(staff_member_id, role, active, company_id)
 select id, 'admin', true, 'LEGDR' from public.staff_members where lower(email) = lower('o.seu.email@legendre.pt')
 on conflict (staff_member_id) do update set role = 'admin', active = true;
 ```
-A partir daí, em **Administração**: criar cost centers, aprovar utilizadores e atribuir perfil (Colaborador, Manager, RH, Contabilidade) e manager.
+A partir daí, em **Administração**: cost centers, aprovar utilizadores, perfil (Colaborador, Manager, RH, Administrativo) e manager de cada um.
 
 ## Acessos
-- Cada colaborador vê os seus pedidos; o manager vê os da equipa; RH, contabilidade e administrador veem todos.
+- Cada colaborador vê os seus pedidos; o manager vê os da equipa; RH, Administrativo e administrador veem todos.
 - Recibos no bucket privado `despesas-recibos` (`<colaborador>/<pedido>/<ficheiro>`), acessíveis só a quem vê o pedido.
-- Pedidos lançados só podem ser reabertos ou apagados pelo administrador, com motivo registado no audit log. Conservação legal: 10 anos.
+- Conservação legal: 10 anos.
 
 ## Alterações futuras
-SQL primeiro (Supabase), depois commit no GitHub, confirmar deploy **Published**, abrir com Ctrl+Shift+R.
+- Ordem: **SQL** no Supabase → **função** (Edge Functions → colar → Deploy) → **merge** no GitHub (deploy automático no Netlify).
+- Cada deploy no Netlify gasta créditos: juntar alterações num só merge.
+- Confirmar o deploy **Published** e testar numa janela anónima (a cache do browser pode mostrar a versão antiga).
+- Editar ficheiros pelo editor do GitHub (lápis) e não por «Upload files», que achata as pastas.
