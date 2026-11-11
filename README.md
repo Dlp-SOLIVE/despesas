@@ -63,10 +63,11 @@ A Edge Function `exp-ocr` (Claude, chave `ANTHROPIC_API_KEY`) está preparada ma
 ## Instalação de raiz (só para recriar a plataforma)
 
 ### 1. Base de dados
-Supabase → **SQL Editor** → correr os ficheiros de `supabase/migrations/` por ordem de data. Podem voltar a correr sem problema.
+Supabase → **SQL Editor** → correr os ficheiros de `supabase/migrations/` **uma vez, por ordem de data**, numa base de dados nova.
+As migrações a partir de 3/11 podem voltar a correr sem problema; as duas primeiras (2/11) não, porque ainda criam a coluna do DocuSign, removida depois.
 Depois de mudar funções ou colunas: `notify pgrst, 'reload schema';`.
 
-Atenção: três alterações já feitas no Supabase não estão guardadas nesta pasta (seguro automóvel obrigatório para trajetos; circuito de pagamento com `paid_on` / `payment_ref`; remoção do DocuSign). Para recriar a base de dados é preciso exportá-las primeiro do Supabase.
+Os ficheiros de 3/11 e 4/11 foram reconstruídos a 11/11/2026 a partir da definição em produção. Correr todas as migrações numa base de dados nova dá exatamente a estrutura de produção (verificado: 194 objetos, sem diferenças).
 
 ### 2. Emails
 Seguir `docs/NOTIFICACOES-EMAIL.md` (conta Gmail, segredos, função `exp-notify` com «Verify JWT» desligado, Vault).
